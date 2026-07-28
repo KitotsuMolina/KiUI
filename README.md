@@ -96,8 +96,9 @@ El MVP nativo incluye:
 - aplicacion del mismo wallpaper en todos los outputs mediante `wallpaper apply-batch`.
 - seccion de estado para las cuatro automatizaciones estaticas y sus artefactos,
   consumida mediante `kitowall service status`.
-- instalacion y activacion confirmada de las automatizaciones desde Status mediante
-  `kitowall service apply` seguido de `kitowall service enable`.
+- instalacion y reparacion confirmada de las automatizaciones desde Status mediante
+  `kitowall service apply`, `service enable` y `service restart`, seguida de una
+  reconciliacion del estado.
 - componente `KiActionButton` para acciones secundarias, primarias y peligrosas,
   evitando que Qt Fusion aparezca en controles o dialogos de configuracion.
 - selector de pack y filtros acumulativos por provider, tipo, favoritos, recientes,

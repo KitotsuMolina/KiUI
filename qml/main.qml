@@ -38,6 +38,9 @@ ApplicationWindow {
     property bool colorFiltersExpanded: false
     property bool resolutionFiltersExpanded: false
     property var catalogItems: []
+    property var kitowallCatalogItems: []
+    property var liveLibraryItems: []
+    property var kitowallCatalogSummary: ({})
     property var historyEntries: []
     property bool compactSidebar: width < 1040
     property bool showDetails: width >= 1180
@@ -49,6 +52,11 @@ ApplicationWindow {
     readonly property color textPrimary: "#f3f1f8"
     readonly property color textSecondary: "#9196aa"
     readonly property string uiFont: "CaskaydiaCove Nerd Font Propo"
+
+    onActiveViewChanged: {
+        if (activeView === "library" && !kilivepaperBridge.busy)
+            kilivepaperBridge.refreshLibrary()
+    }
 
     function selected(role) {
         if (selectedIndex < 0 || selectedIndex >= wallpapers.count)
@@ -75,6 +83,8 @@ ApplicationWindow {
     }
 
     function wallpaperTitle(item) {
+        if (String(item.title || "").length > 0)
+            return String(item.title)
         var candidate = item.local_path || item.remote_url || item.id || "Wallpaper"
         var clean = String(candidate).split("?")[0]
         var parts = clean.split("/")
@@ -93,6 +103,8 @@ ApplicationWindow {
         case "unsplash": return ["#23799a", "#121a38"]
         case "local": return ["#59647d", "#151726"]
         case "static_url": return ["#b36b1f", "#17151b"]
+        case "moewalls": return ["#8d275f", "#171126"]
+        case "motionbgs": return ["#176b86", "#11182e"]
         default: return ["#663399", "#111342"]
         }
     }
@@ -120,20 +132,38 @@ ApplicationWindow {
         return isNaN(count) ? "N/D" : count.toLocaleString(Qt.locale(), "f", 0)
     }
 
-    function updateCatalogCounts(catalog) {
+    function updateCatalogCounts() {
+        var catalog = kitowallCatalogSummary || {}
         var facets = catalog.facets || {}
         var providers = facets.by_provider || {}
-        sourceModel.setProperty(0, "count", countText(catalog.total || 0))
+        var liveProviders = {"moewalls": 0, "motionbgs": 0}
+        var liveFavorites = 0
+        for (var index = 0; index < liveLibraryItems.length; ++index) {
+            var liveItem = liveLibraryItems[index]
+            var provider = String(liveItem.provider || "").toLowerCase()
+            if (liveProviders[provider] !== undefined)
+                liveProviders[provider] += 1
+            if (liveItem.favorite === true)
+                liveFavorites += 1
+        }
+        var staticTotal = Number(catalog.total || kitowallCatalogItems.length)
+        var total = staticTotal + liveLibraryItems.length
+        sourceModel.setProperty(0, "count", countText(total))
         sourceModel.setProperty(1, "count", countText(providers.local || 0))
         sourceModel.setProperty(2, "count", countText(providers.wallhaven || 0))
         sourceModel.setProperty(3, "count", countText(providers.unsplash || 0))
         sourceModel.setProperty(4, "count", countText(providers.reddit || 0))
-        filterModel.setProperty(0, "modelCount", countText(catalog.total || 0))
+        sourceModel.setProperty(5, "count", countText(liveProviders.moewalls))
+        sourceModel.setProperty(6, "count", countText(liveProviders.motionbgs))
+        filterModel.setProperty(0, "modelCount", countText(total))
         filterModel.setProperty(1, "modelCount", countText(facets.images || 0))
-        filterModel.setProperty(2, "modelCount", countText(facets.videos || 0))
-        filterModel.setProperty(3, "modelCount", countText(facets.favorites || 0))
-        filterModel.setProperty(5, "modelCount", countText(facets.hydrated || 0))
-        favoriteCount = countText(facets.favorites || 0)
+        filterModel.setProperty(2, "modelCount",
+            countText(Number(facets.videos || 0) + liveLibraryItems.length))
+        filterModel.setProperty(3, "modelCount",
+            countText(Number(facets.favorites || 0) + liveFavorites))
+        filterModel.setProperty(5, "modelCount",
+            countText(Number(facets.hydrated || 0) + liveLibraryItems.length))
+        favoriteCount = countText(Number(facets.favorites || 0) + liveFavorites)
     }
 
     function loadPacks() {
@@ -217,7 +247,8 @@ ApplicationWindow {
         var path = String(item.local_path || "")
         if (activeFilter === 4 && recentRank(path) < 0)
             return false
-        if (activeFilter === 5 && item.hydrated !== true)
+        if (activeFilter === 5 && item.hydrated !== true
+                && item.downloaded !== true)
             return false
         if (minimumFilterWidth > 0
                 && (Number(item.width || preview.width || 0) < minimumFilterWidth
@@ -250,6 +281,8 @@ ApplicationWindow {
         var colors = providerColors(item.provider)
         var width = Number(item.width || preview.width || 0)
         var height = Number(item.height || preview.height || 0)
+        var sourceWidth = Number(preview.source_width || width)
+        var sourceHeight = Number(preview.source_height || height)
         return {
             "title": wallpaperTitle(item),
             "provider": String(item.provider || ""),
@@ -263,10 +296,11 @@ ApplicationWindow {
             "size": formatBytes(preview.size_bytes),
             "tags": Array.isArray(item.tags) ? item.tags.join("  ") : "",
             "wallpaperId": String(item.id || ""),
+            "product": String(item.product || "kitowall"),
             "pack": String(item.pack || ""),
             "previewSource": mediaSource(item),
-            "sourceWidth": width,
-            "sourceHeight": height,
+            "sourceWidth": sourceWidth,
+            "sourceHeight": sourceHeight,
             "hydrated": item.hydrated === true,
             "localPath": String(item.local_path || "")
         }
@@ -365,6 +399,11 @@ ApplicationWindow {
     function applyToSelectedOutput() {
         if (selectedOutput.length === 0 || wallpapers.count === 0)
             return
+        if (String(selected("product")) === "kilivepaper") {
+            kilivepaperBridge.applyItem(
+                String(selected("wallpaperId")), selectedOutput)
+            return
+        }
         kitowallBridge.applyWallpaper(
             String(selected("pack")),
             String(selected("wallpaperId")),
@@ -374,6 +413,14 @@ ApplicationWindow {
     function applyToAllOutputs() {
         if (outputsModel.count === 0 || wallpapers.count === 0)
             return
+        if (String(selected("product")) === "kilivepaper") {
+            var outputs = []
+            for (var index = 0; index < outputsModel.count; ++index)
+                outputs.push(outputsModel.get(index).outputName)
+            kilivepaperBridge.applyItemAll(
+                String(selected("wallpaperId")), JSON.stringify(outputs))
+            return
+        }
         kitowallBridge.applyWallpaperAll(
             String(selected("pack")),
             String(selected("wallpaperId")))
@@ -387,8 +434,64 @@ ApplicationWindow {
 
     function loadCatalog() {
         var catalog = parseJson(kitowallBridge.catalogJson, {})
-        updateCatalogCounts(catalog)
-        catalogItems = catalog.items || []
+        kitowallCatalogSummary = catalog
+        kitowallCatalogItems = catalog.items || []
+        mergeCatalogs()
+    }
+
+    function normalizeLiveItem(item) {
+        var preview = item.media_preview || {}
+        var resolution = item.resolution || {}
+        var videoWidth = Number(preview.width || resolution.w || 0)
+        var videoHeight = Number(preview.height || resolution.h || 0)
+        var thumbnailWidth = 480
+        var thumbnailHeight = videoWidth > 0 && videoHeight > 0
+            ? Math.max(1, Math.round(thumbnailWidth * videoHeight / videoWidth))
+            : 270
+        return {
+            "product": "kilivepaper",
+            "id": String(item.id || ""),
+            "title": String(item.title || item.slug || "Live wallpaper"),
+            "provider": String(item.provider || ""),
+            "pack": "",
+            "favorite": item.favorite === true,
+            "favorite_key": String(item.id || ""),
+            "hydrated": true,
+            "downloaded": true,
+            "local_path": String(item.file_path || preview.local_path || ""),
+            "width": videoWidth,
+            "height": videoHeight,
+            "tags": Array.isArray(item.tags) ? item.tags : [],
+            "last_applied_at": Number(item.last_applied_at || 0),
+            "preview": {
+                "kind": "video",
+                "local_path": String(preview.local_path || item.file_path || ""),
+                "width": videoWidth,
+                "height": videoHeight,
+                "source_width": thumbnailWidth,
+                "source_height": thumbnailHeight,
+                "size_bytes": Number(preview.size_bytes || item.size_bytes || 0),
+                "duration_ms": Number(preview.duration_ms || 0),
+                "thumbnail": preview.thumbnail || {
+                    "local_path": String(item.thumb_path || "")
+                }
+            }
+        }
+    }
+
+    function loadLiveLibrary() {
+        var response = parseJson(kilivepaperBridge.libraryJson, {})
+        var items = response.items || []
+        var normalized = []
+        for (var index = 0; index < items.length; ++index)
+            normalized.push(normalizeLiveItem(items[index]))
+        liveLibraryItems = normalized
+        mergeCatalogs()
+    }
+
+    function mergeCatalogs() {
+        catalogItems = kitowallCatalogItems.concat(liveLibraryItems)
+        updateCatalogCounts()
         rebuildWallpapers()
     }
 
@@ -451,7 +554,16 @@ ApplicationWindow {
 
     function toggleSelectedFavorite() {
         var favoriteKey = String(selected("favoriteKey"))
-        if (kitowallBridge.busy || favoriteKey.length === 0)
+        if (favoriteKey.length === 0)
+            return
+        if (String(selected("product")) === "kilivepaper") {
+            if (!kilivepaperBridge.busy)
+                kilivepaperBridge.setFavorite(
+                    String(selected("wallpaperId")),
+                    !Boolean(selected("favorite")))
+            return
+        }
+        if (kitowallBridge.busy)
             return
         kitowallBridge.setFavorite(
             favoriteKey,
@@ -477,6 +589,23 @@ ApplicationWindow {
                     || lastMessage.indexOf("Wallpaper agregado a favoritos") === 0
                     || lastMessage.indexOf("Wallpaper eliminado de favoritos") === 0) {
                 kitowallBridge.refreshDashboard(root.selectedPack, true)
+                root.applyMessage = lastMessage
+                applyToast.restart()
+            }
+        }
+        onLastErrorChanged: {
+            if (lastError.length > 0) {
+                root.applyMessage = lastError
+                applyToast.restart()
+            }
+        }
+    }
+
+    KilivepaperBridge {
+        id: kilivepaperBridge
+        onLibraryJsonChanged: root.loadLiveLibrary()
+        onLastMessageChanged: {
+            if (lastMessage.length > 0) {
                 root.applyMessage = lastMessage
                 applyToast.restart()
             }
@@ -781,6 +910,31 @@ ApplicationWindow {
                             font.pixelSize: 9
                         }
                     }
+                }
+            }
+
+            Item { width: 1; height: 10 }
+
+            Text {
+                visible: !root.compactSidebar
+                text: "LIVE WALLPAPERS"
+                color: "#63697e"
+                font.family: root.uiFont
+                font.pixelSize: 10
+                font.letterSpacing: 1.1
+                leftPadding: 9
+            }
+
+            NavItem {
+                width: parent.width
+                displayLabel: "Descargas live"
+                displayIcon: "cloud_download"
+                compact: root.compactSidebar
+                selected: root.activeView === "liveDownloads"
+                onActivated: {
+                    root.activeView = "liveDownloads"
+                    root.colorFiltersExpanded = false
+                    root.resolutionFiltersExpanded = false
                 }
             }
         }
@@ -1678,6 +1832,25 @@ ApplicationWindow {
         }
     }
 
+    LiveDownloadsPage {
+        id: liveDownloadsView
+        visible: root.activeView === "liveDownloads"
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: 26
+        anchors.rightMargin: 28
+        anchors.topMargin: 26
+        anchors.bottomMargin: 24
+        outputModel: outputsModel
+        selectedOutput: root.selectedOutput
+        onLibraryChanged: {
+            if (!kilivepaperBridge.busy)
+                kilivepaperBridge.refreshLibrary()
+        }
+    }
+
     Loader {
         id: settingsLoader
 
@@ -1694,6 +1867,7 @@ ApplicationWindow {
         source: "SettingsPage.qml"
         onLoaded: {
             item.kitowall = kitowallBridge
+            item.kilivepaper = kilivepaperBridge
             item.refreshAll()
         }
     }
@@ -1750,6 +1924,16 @@ ApplicationWindow {
         onTriggered: kitowallBridge.refreshDashboard(root.selectedPack, true)
     }
 
+    Timer {
+        interval: 5000
+        repeat: true
+        running: root.activeView === "library"
+        onTriggered: {
+            if (!kilivepaperBridge.busy)
+                kilivepaperBridge.refreshLibrary()
+        }
+    }
+
     Shortcut {
         sequence: "Escape"
         onActivated: root.close()
@@ -1759,6 +1943,7 @@ ApplicationWindow {
         kitowallBridge.refresh()
         kitowallBridge.refreshOutputs()
         kitowallBridge.refreshDashboard("", true)
+        kilivepaperBridge.refreshLibrary()
         hexGrid.forceActiveFocus()
     }
 }

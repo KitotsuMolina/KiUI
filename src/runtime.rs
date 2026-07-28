@@ -58,7 +58,7 @@ impl RuntimeContext {
                 kitowall,
                 compositor,
                 kitsune: local_binary(&root, "kitsune", "kitsune", &preferred),
-                kilivepaper: local_binary(&root, "kilivepaper", "kilivepaper", &preferred),
+                kilivepaper: local_kilivepaper_binary(&root, &preferred),
             },
         })
     }
@@ -79,6 +79,10 @@ fn local_binary(root: &Path, project: &str, binary: &str, preferred: &str) -> Op
         .into_iter()
         .map(|profile| root.join(project).join("target").join(profile).join(binary))
         .find(|candidate| candidate.is_file())
+}
+
+fn local_kilivepaper_binary(root: &Path, preferred: &str) -> Option<PathBuf> {
+    local_binary(root, "kilivepaper", "kilivepaper", preferred)
 }
 
 fn find_refactor_root(start: &Path) -> Option<PathBuf> {

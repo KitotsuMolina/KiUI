@@ -1,5 +1,6 @@
 #[allow(dead_code)]
 mod contracts;
+mod kilivepaper_bridge;
 mod kitowall_bridge;
 mod runtime;
 
@@ -19,17 +20,31 @@ fn main() {
     configure_graphics_backend(runtime.mode);
     if runtime.mode == runtime::RuntimeMode::Local {
         eprintln!(
-            "kiui:mode:local kitowall={} compositor={}",
+            "kiui:mode:local kitowall={} kilivepaper={} compositor={}",
             runtime.clis.kitowall.display(),
+            runtime
+                .clis
+                .kilivepaper
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "<missing>".into()),
             runtime.clis.compositor.display()
         );
     }
     if let Err(error) = kitowall_bridge::configure(
         runtime.clis.kitowall.clone(),
+        runtime.clis.kilivepaper.clone(),
+        runtime.clis.compositor.clone(),
         runtime.mode == runtime::RuntimeMode::Local,
     ) {
         eprintln!("kiui:error:{error}");
         return;
+    }
+    if let Some(binary) = runtime.clis.kilivepaper.clone() {
+        if let Err(error) = kilivepaper_bridge::configure(binary, runtime.clis.compositor.clone()) {
+            eprintln!("kiui:error:{error}");
+            return;
+        }
     }
 
     let mut app = QGuiApplication::new();

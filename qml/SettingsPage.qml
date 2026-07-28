@@ -10,6 +10,7 @@ Rectangle {
     signal closeRequested()
 
     property var kitowall: null
+    property var kilivepaper: null
     color: "transparent"
     property int activeSection: 0
     property string selectedPackName: ""
@@ -22,6 +23,17 @@ Rectangle {
     property int serviceActive: 0
     property int serviceErrors: 0
     property bool servicesHealthy: false
+    property bool liveServiceInstalled: false
+    property bool liveServiceEnabled: false
+    property bool liveServiceActive: false
+    property string liveServiceState: "unknown"
+    property string liveServiceUnit: "kitsune-rendercore.service"
+    property string liveDecoder: "unknown"
+    property string liveBackend: "unknown"
+    property int liveLibraryCount: 0
+    property int liveOutputCount: 0
+    property string liveLibraryRoot: ""
+    property string liveMapFile: ""
     readonly property color accent: "#ad3cf3"
     readonly property color accentBright: "#d16cff"
     readonly property color panel: "#d90b0d18"
@@ -59,6 +71,14 @@ Rectangle {
     function providerIndex(provider) {
         for (var index = 0; index < providerModel.count; ++index) {
             if (providerModel.get(index).value === provider)
+                return index
+        }
+        return 0
+    }
+
+    function modelIndex(model, expected) {
+        for (var index = 0; index < model.length; ++index) {
+            if (String(model[index]) === String(expected))
                 return index
         }
         return 0
@@ -114,14 +134,110 @@ Rectangle {
     }
 
     function refreshAll() {
-        if (!kitowall)
+        if (kitowall) {
+            kitowall.refresh()
+            kitowall.refreshServices()
+            loadSettings()
+            loadPacks()
+            loadJobs()
+            loadServices()
+        }
+        if (kilivepaper) {
+            kilivepaper.refreshSettings()
+            loadKilivepaperSettings()
+            loadKilivepaperStatus()
+        }
+    }
+
+    function loadKilivepaperSettings() {
+        if (!kilivepaper)
             return
-        kitowall.refresh()
-        kitowall.refreshServices()
-        loadSettings()
-        loadPacks()
-        loadJobs()
-        loadServices()
+        var response = parseJson(kilivepaper.settingsJson, {})
+        var library = value(response, "library", {})
+        var defaults = value(library, "apply_defaults", {})
+        var engine = value(response, "engine", {})
+        liveFpsField.text = String(value(defaults, "video_fps", 30))
+        liveSpeedField.text = String(value(defaults, "video_speed", 1.0))
+        liveHwaccelSelect.currentIndex = modelIndex(
+            liveHwaccelSelect.model, value(defaults, "hwaccel", "auto"))
+        liveQualitySelect.currentIndex = modelIndex(
+            liveQualitySelect.model, value(defaults, "quality", "high"))
+        liveSteamPause.checked = boolValue(defaults, "pause_on_steam_game", true)
+        liveSteamPollField.text = String(value(defaults, "steam_poll_ms", 1000))
+        loadPauseApplications()
+        liveDecoder = String(value(engine, "decoder", "unknown"))
+        liveLibraryRoot = String(value(library, "root", value(response, "root", "")))
+        liveMapFile = String(value(engine, "map_file", ""))
+    }
+
+    function loadPauseApplications() {
+        if (!kilivepaper)
+            return
+        var settings = parseJson(kilivepaper.settingsJson, {})
+        var defaults = value(value(settings, "library", {}), "apply_defaults", {})
+        var selected = value(defaults, "pause_applications", [])
+        var response = parseJson(kilivepaper.applicationsJson, {})
+        var applications = value(response, "applications", [])
+        var known = ({})
+        pauseApplicationsModel.clear()
+        for (var index = 0; index < applications.length; ++index) {
+            var application = applications[index]
+            var appId = String(value(application, "id", ""))
+            if (!appId)
+                continue
+            known[appId] = true
+            pauseApplicationsModel.append({
+                "appId": appId,
+                "appName": String(value(application, "name", appId)),
+                "executable": String(value(application, "executable", "")),
+                "pauseEnabled": selected.indexOf(appId) >= 0
+            })
+        }
+        for (var selectedIndex = 0; selectedIndex < selected.length; ++selectedIndex) {
+            var selectedId = String(selected[selectedIndex])
+            if (!known[selectedId]) {
+                pauseApplicationsModel.append({
+                    "appId": selectedId,
+                    "appName": selectedId,
+                    "executable": "",
+                    "pauseEnabled": true
+                })
+            }
+        }
+    }
+
+    function selectedPauseApplications() {
+        var selected = []
+        for (var index = 0; index < pauseApplicationsModel.count; ++index) {
+            var application = pauseApplicationsModel.get(index)
+            if (application.pauseEnabled)
+                selected.push(application.appId)
+        }
+        return selected
+    }
+
+    function applicationMatchesFilter(name, id) {
+        var query = liveApplicationSearch.text.trim().toLowerCase()
+        return !query || String(name).toLowerCase().indexOf(query) >= 0
+            || String(id).toLowerCase().indexOf(query) >= 0
+    }
+
+    function loadKilivepaperStatus() {
+        if (!kilivepaper)
+            return
+        var response = parseJson(kilivepaper.statusJson, {})
+        var service = value(response, "service", {})
+        var engine = value(response, "engine", {})
+        var outputs = value(response, "outputs", [])
+        liveServiceInstalled = boolValue(service, "installed", false)
+        liveServiceEnabled = boolValue(service, "enabled", false)
+        liveServiceActive = boolValue(service, "active", false)
+        liveServiceState = String(value(service, "state", "unknown"))
+        liveServiceUnit = String(value(service, "unit", "kitsune-rendercore.service"))
+        liveDecoder = String(value(engine, "decoder", liveDecoder))
+        liveBackend = String(value(engine, "backend", "unknown"))
+        liveLibraryCount = Number(value(response, "library_count", liveLibraryCount))
+        liveOutputCount = Array.isArray(outputs) ? outputs.length : liveOutputCount
     }
 
     function loadJobs() {
@@ -453,9 +569,17 @@ Rectangle {
         onServicesJsonChanged: page.loadServices()
     }
 
+    Connections {
+        target: kilivepaper
+        onSettingsJsonChanged: page.loadKilivepaperSettings()
+        onApplicationsJsonChanged: page.loadPauseApplications()
+        onStatusJsonChanged: page.loadKilivepaperStatus()
+    }
+
     ListModel { id: packsModel }
     ListModel { id: jobsModel }
     ListModel { id: servicesModel }
+    ListModel { id: pauseApplicationsModel }
     ListModel {
         id: providerModel
         ListElement { label: "Wallhaven"; value: "wallhaven" }
@@ -533,9 +657,9 @@ Rectangle {
 
                 Repeater {
                     model: [
-                        {"label": "General", "icon": "tune"},
-                        {"label": "Packs", "icon": "folder"},
-                        {"label": "Status", "icon": "monitor_heart"}
+                        {"label": "General", "icon": "tune", "section": 0},
+                        {"label": "Packs", "icon": "folder", "section": 1},
+                        {"label": "Status", "icon": "monitor_heart", "section": 2}
                     ]
 
                     delegate: Button {
@@ -549,17 +673,17 @@ Rectangle {
                         rightPadding: 0
                         topPadding: 0
                         bottomPadding: 0
-                        onClicked: page.activeSection = index
+                        onClicked: page.activeSection = modelData.section
                         background: Rectangle {
                             radius: 12
-                            color: page.activeSection === index
+                            color: page.activeSection === modelData.section
                                 ? "#3a1262"
                                 : (sectionButton.hovered ? "#171a27" : "transparent")
                             border.width: 1
-                            border.color: page.activeSection === index ? "#8632b9" : "transparent"
+                            border.color: page.activeSection === modelData.section ? "#8632b9" : "transparent"
 
                             Rectangle {
-                                visible: page.activeSection === index
+                                visible: page.activeSection === modelData.section
                                 anchors.left: parent.left
                                 anchors.leftMargin: 5
                                 anchors.verticalCenter: parent.verticalCenter
@@ -581,7 +705,7 @@ Rectangle {
                                 KiIcon {
                                     anchors.centerIn: parent
                                     name: modelData.icon
-                                    color: page.activeSection === index
+                                    color: page.activeSection === modelData.section
                                         ? page.accentBright : "#8990a5"
                                     iconSize: 18
                                 }
@@ -591,11 +715,94 @@ Rectangle {
                                 Layout.fillWidth: true
                                 Layout.rightMargin: 12
                                 text: modelData.label
-                                color: page.activeSection === index
+                                color: page.activeSection === modelData.section
                                     ? "#f1e8f7" : "#adb2c3"
                                 font.family: page.uiFont
                                 font.pixelSize: 11
-                                font.weight: page.activeSection === index
+                                font.weight: page.activeSection === modelData.section
+                                    ? Font.DemiBold : Font.Normal
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.topMargin: 14
+                    text: "KILIVEPAPER"
+                    color: "#646a7f"
+                    font.family: page.uiFont
+                    font.pixelSize: 9
+                    font.letterSpacing: 1.2
+                    leftPadding: 11
+                    bottomPadding: 6
+                }
+
+                Repeater {
+                    model: [
+                        {"label": "General", "icon": "movie", "section": 3},
+                        {"label": "Status", "icon": "play_circle", "section": 4}
+                    ]
+
+                    delegate: Button {
+                        id: liveSectionButton
+
+                        required property int index
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 46
+                        leftPadding: 0
+                        rightPadding: 0
+                        topPadding: 0
+                        bottomPadding: 0
+                        onClicked: page.activeSection = modelData.section
+                        background: Rectangle {
+                            radius: 12
+                            color: page.activeSection === modelData.section
+                                ? "#3a1262"
+                                : (liveSectionButton.hovered ? "#171a27" : "transparent")
+                            border.width: 1
+                            border.color: page.activeSection === modelData.section
+                                ? "#8632b9" : "transparent"
+
+                            Rectangle {
+                                visible: page.activeSection === modelData.section
+                                anchors.left: parent.left
+                                anchors.leftMargin: 5
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 3
+                                height: 20
+                                radius: 2
+                                color: page.accentBright
+                            }
+                        }
+
+                        contentItem: RowLayout {
+                            spacing: 10
+
+                            Item {
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                Layout.leftMargin: 11
+
+                                KiIcon {
+                                    anchors.centerIn: parent
+                                    name: modelData.icon
+                                    color: page.activeSection === modelData.section
+                                        ? page.accentBright : "#8990a5"
+                                    iconSize: 18
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                Layout.rightMargin: 12
+                                text: modelData.label
+                                color: page.activeSection === modelData.section
+                                    ? "#f1e8f7" : "#adb2c3"
+                                font.family: page.uiFont
+                                font.pixelSize: 11
+                                font.weight: page.activeSection === modelData.section
                                     ? Font.DemiBold : Font.Normal
                                 verticalAlignment: Text.AlignVCenter
                             }
@@ -613,13 +820,22 @@ Rectangle {
                         anchors.fill: parent
                         anchors.margins: 10
                         KiIcon {
-                            name: kitowall.lastError.length > 0 ? "error" : (kitowall.busy ? "sync" : "check_circle")
-                            color: kitowall.lastError.length > 0 ? "#f07983" : (kitowall.busy ? "#d6a3f5" : "#64d686")
+                            property var activeBridge: page.activeSection >= 3 ? page.kilivepaper : page.kitowall
+                            name: activeBridge && activeBridge.lastError.length > 0
+                                ? "error" : (activeBridge && activeBridge.busy ? "sync" : "check_circle")
+                            color: activeBridge && activeBridge.lastError.length > 0
+                                ? "#f07983" : (activeBridge && activeBridge.busy ? "#d6a3f5" : "#64d686")
                             iconSize: 19
                         }
                         Text {
+                            property var activeBridge: page.activeSection >= 3 ? page.kilivepaper : page.kitowall
                             Layout.fillWidth: true
-                            text: kitowall.lastError.length > 0 ? kitowall.lastError : (kitowall.busy ? "Procesando..." : (kitowall.lastMessage || "CLI conectado"))
+                            text: !activeBridge ? "CLI no conectado"
+                                : (activeBridge.lastError.length > 0
+                                    ? activeBridge.lastError
+                                    : (activeBridge.busy
+                                        ? "Procesando..."
+                                        : (activeBridge.lastMessage || "CLI conectado")))
                             color: "#9197aa"
                             wrapMode: Text.WordWrap
                             maximumLineCount: 3
@@ -647,7 +863,11 @@ Rectangle {
                             ? "Comportamiento general"
                             : (page.activeSection === 1
                                 ? "Bibliotecas y fuentes"
-                                : "Estado de servicios")
+                                : (page.activeSection === 2
+                                    ? "Estado de servicios"
+                                    : (page.activeSection === 3
+                                        ? "Motor de live wallpapers"
+                                        : "Estado de Kilivepaper")))
                         color: page.textPrimary
                         font.family: page.uiFont
                         font.pixelSize: 24
@@ -658,21 +878,25 @@ Rectangle {
                             ? "Rotacion y transiciones del modulo estatico"
                             : (page.activeSection === 1
                                 ? "Providers, indices e hidratacion"
-                                : "Automatizaciones de wallpapers estaticos")
+                                : (page.activeSection === 2
+                                    ? "Automatizaciones de wallpapers estaticos"
+                                    : (page.activeSection === 3
+                                        ? "Reproduccion, recursos y pausa inteligente"
+                                        : "Motor, servicio y salidas detectadas")))
                         color: page.textSecondary
                         font.family: page.uiFont
                         font.pixelSize: 10
                     }
                 }
                 Button {
-                    visible: page.activeSection === 2 && !page.servicesHealthy
-                    Layout.preferredWidth: page.serviceInstalled < page.serviceTotal ? 156 : 174
+                    visible: page.activeSection === 2
+                    Layout.preferredWidth: 168
                     Layout.preferredHeight: 40
                     text: page.serviceInstalled < page.serviceTotal
                         ? "Instalar servicios"
-                        : "Reparar y activar"
+                        : "Reparar servicios"
                     enabled: !kitowall.busy
-                    onClicked: installServicesDialog.open()
+                    onClicked: repairServicesDialog.open()
                     background: Rectangle {
                         radius: 10
                         opacity: parent.enabled ? 1 : 0.5
@@ -691,14 +915,13 @@ Rectangle {
                         font.weight: Font.DemiBold
                     }
                 }
-                Button {
-                    Layout.preferredWidth: 112
+                KiActionButton {
+                    visible: page.activeSection === 4
+                    Layout.preferredWidth: 120
                     Layout.preferredHeight: 40
                     text: "Recargar"
-                    enabled: !kitowall.busy
-                    onClicked: page.refreshAll()
-                    background: Rectangle { radius: 10; color: parent.hovered ? "#1c1f2d" : "#121520"; border.color: "#303445" }
-                    contentItem: Text { text: parent.text; color: "#c9ccd8"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: page.uiFont; font.pixelSize: 10 }
+                    enabled: kilivepaper && !kilivepaper.busy
+                    onClicked: kilivepaper.refreshStatus()
                 }
             }
             StackLayout {
@@ -1457,19 +1680,563 @@ Rectangle {
                         }
                     }
                 }
+
+                ScrollView {
+                    clip: true
+                    contentWidth: availableWidth
+
+                    ColumnLayout {
+                        width: parent.width
+                        spacing: 14
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: liveGeneralGrid.implicitHeight + 40
+                            radius: 17
+                            color: page.panel
+                            border.color: page.border
+
+                            GridLayout {
+                                id: liveGeneralGrid
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                columns: width > 760 ? 3 : 2
+                                columnSpacing: 15
+                                rowSpacing: 14
+
+                                Text {
+                                    Layout.columnSpan: liveGeneralGrid.columns
+                                    text: "Valores predeterminados de reproduccion"
+                                    color: page.textPrimary
+                                    font.family: page.uiFont
+                                    font.pixelSize: 14
+                                    font.weight: Font.DemiBold
+                                }
+
+                                ConfigField {
+                                    id: liveFpsField
+                                    label: "FPS de video"
+                                    placeholderText: "30"
+                                    helperText: "Rango permitido: 1 a 240"
+                                    inputMethodHints: Qt.ImhDigitsOnly
+                                }
+
+                                ConfigField {
+                                    id: liveSpeedField
+                                    label: "Velocidad"
+                                    placeholderText: "1.0"
+                                    helperText: "Rango permitido: 0.1 a 4.0"
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 7
+                                    Text {
+                                        text: "Aceleracion de video"
+                                        color: "#aeb3c3"
+                                        font.family: page.uiFont
+                                        font.pixelSize: 11
+                                    }
+                                    ComboBox {
+                                        id: liveHwaccelSelect
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 42
+                                        model: ["auto", "nvdec", "vaapi", "none"]
+                                    }
+                                    Text {
+                                        text: "Auto selecciona la mejor opcion disponible"
+                                        color: "#686f82"
+                                        font.family: page.uiFont
+                                        font.pixelSize: 8
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 7
+                                    Text {
+                                        text: "Calidad de render"
+                                        color: "#aeb3c3"
+                                        font.family: page.uiFont
+                                        font.pixelSize: 11
+                                    }
+                                    ComboBox {
+                                        id: liveQualitySelect
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 42
+                                        model: ["low", "medium", "high", "ultra"]
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Resolucion interna del renderer. No cambia la variante HD/4K descargada ni supera la resolucion del monitor."
+                                        color: "#686f82"
+                                        wrapMode: Text.WordWrap
+                                        font.family: page.uiFont
+                                        font.pixelSize: 8
+                                    }
+                                }
+
+                                ConfigField {
+                                    id: liveSteamPollField
+                                    label: "Sondeo de Steam (ms)"
+                                    placeholderText: "1000"
+                                    helperText: "Rango permitido: 200 a 120000"
+                                    inputMethodHints: Qt.ImhDigitsOnly
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 7
+                                    Text {
+                                        text: "Pausa inteligente"
+                                        color: "#aeb3c3"
+                                        font.family: page.uiFont
+                                        font.pixelSize: 11
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Switch { id: liveSteamPause }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Pausar al detectar un juego de Steam"
+                                            color: page.textSecondary
+                                            wrapMode: Text.WordWrap
+                                            font.family: page.uiFont
+                                            font.pixelSize: 9
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 330
+                            radius: 17
+                            color: page.panel
+                            border.color: page.border
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 12
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 3
+                                        Text {
+                                            text: "Pausar al ejecutar aplicaciones"
+                                            color: page.textPrimary
+                                            font.family: page.uiFont
+                                            font.pixelSize: 14
+                                            font.weight: Font.DemiBold
+                                        }
+                                        Text {
+                                            text: "El compositor normaliza aplicaciones XDG y procesos para el escritorio actual."
+                                            color: page.textSecondary
+                                            font.family: page.uiFont
+                                            font.pixelSize: 9
+                                        }
+                                    }
+                                    Text {
+                                        text: page.selectedPauseApplications().length + " seleccionadas"
+                                        color: page.accentBright
+                                        font.family: page.uiFont
+                                        font.pixelSize: 9
+                                    }
+                                }
+
+                                TextField {
+                                    id: liveApplicationSearch
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 40
+                                    placeholderText: "Buscar aplicacion instalada..."
+                                    color: page.textPrimary
+                                    font.family: page.uiFont
+                                    font.pixelSize: 10
+                                    leftPadding: 14
+                                    rightPadding: 14
+                                    background: Rectangle {
+                                        radius: 10
+                                        color: "#10131e"
+                                        border.color: liveApplicationSearch.activeFocus
+                                            ? page.accent : page.border
+                                    }
+                                }
+
+                                ListView {
+                                    id: pauseApplicationsList
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+                                    spacing: 4
+                                    model: pauseApplicationsModel
+                                    ScrollBar.vertical: ScrollBar {
+                                        policy: ScrollBar.AsNeeded
+                                    }
+                                    delegate: Rectangle {
+                                        required property int index
+                                        required property string appId
+                                        required property string appName
+                                        required property string executable
+                                        required property bool pauseEnabled
+                                        width: pauseApplicationsList.width
+                                        height: page.applicationMatchesFilter(appName, appId) ? 46 : 0
+                                        visible: height > 0
+                                        radius: 9
+                                        color: pauseEnabled ? "#281238" : "#10131e"
+                                        border.color: pauseEnabled ? "#713093" : "#242838"
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 12
+                                            anchors.rightMargin: 12
+                                            spacing: 10
+                                            CheckBox {
+                                                checked: pauseEnabled
+                                                onToggled: pauseApplicationsModel.setProperty(
+                                                    index, "pauseEnabled", checked)
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 1
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: appName
+                                                    color: page.textPrimary
+                                                    elide: Text.ElideRight
+                                                    font.family: page.uiFont
+                                                    font.pixelSize: 10
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: executable
+                                                        ? appId + "  ·  " + executable : appId
+                                                    color: page.textSecondary
+                                                    elide: Text.ElideMiddle
+                                                    font.family: page.uiFont
+                                                    font.pixelSize: 8
+                                                }
+                                            }
+                                            Text {
+                                                text: pauseEnabled ? "Pausar" : ""
+                                                color: "#67da91"
+                                                font.family: page.uiFont
+                                                font.pixelSize: 9
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    visible: pauseApplicationsModel.count === 0
+                                    Layout.fillWidth: true
+                                    text: "No se encontraron entradas XDG de aplicaciones."
+                                    color: page.textSecondary
+                                    horizontalAlignment: Text.AlignHCenter
+                                    font.family: page.uiFont
+                                    font.pixelSize: 9
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: livePathsGrid.implicitHeight + 40
+                            radius: 17
+                            color: page.panel
+                            border.color: page.border
+
+                            GridLayout {
+                                id: livePathsGrid
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                columns: width > 760 ? 3 : 2
+                                columnSpacing: 15
+                                rowSpacing: 14
+
+                                Text {
+                                    Layout.columnSpan: livePathsGrid.columns
+                                    text: "Motor y almacenamiento"
+                                    color: page.textPrimary
+                                    font.family: page.uiFont
+                                    font.pixelSize: 14
+                                    font.weight: Font.DemiBold
+                                }
+                                ConfigField {
+                                    label: "Decoder compilado"
+                                    text: page.liveDecoder
+                                    readOnly: true
+                                }
+                                ConfigField {
+                                    label: "Biblioteca"
+                                    text: page.liveLibraryRoot
+                                    readOnly: true
+                                }
+                                ConfigField {
+                                    label: "Mapa por monitor"
+                                    text: page.liveMapFile
+                                    readOnly: true
+                                }
+                            }
+                        }
+
+                        Button {
+                            Layout.alignment: Qt.AlignRight
+                            Layout.preferredWidth: 190
+                            Layout.preferredHeight: 44
+                            text: "Guardar configuracion"
+                            enabled: kilivepaper && !kilivepaper.busy
+                            onClicked: kilivepaper.saveGeneral(JSON.stringify({
+                                "videoFps": Number(liveFpsField.text),
+                                "videoSpeed": Number(liveSpeedField.text),
+                                "hwaccel": liveHwaccelSelect.currentText,
+                                "quality": liveQualitySelect.currentText,
+                                "pauseOnSteamGame": liveSteamPause.checked,
+                                "pauseApplications": page.selectedPauseApplications(),
+                                "steamPollMs": Number(liveSteamPollField.text)
+                            }))
+                            background: Rectangle {
+                                radius: 11
+                                opacity: parent.enabled ? 1 : 0.5
+                                gradient: Gradient {
+                                    GradientStop { position: 0; color: "#bd37f5" }
+                                    GradientStop { position: 1; color: "#7113b9" }
+                                }
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                color: "white"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.family: page.uiFont
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                    }
+                }
+
+                ScrollView {
+                    clip: true
+                    contentWidth: availableWidth
+
+                    ColumnLayout {
+                        width: parent.width
+                        spacing: 14
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 150
+                            radius: 17
+                            color: page.panel
+                            border.color: page.liveServiceActive ? "#28553c" : page.border
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 18
+                                spacing: 12
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 12
+
+                                    Rectangle {
+                                        Layout.preferredWidth: 42
+                                        Layout.preferredHeight: 42
+                                        radius: 12
+                                        color: page.liveServiceActive ? "#123323" : "#25182d"
+                                        KiIcon {
+                                            anchors.centerIn: parent
+                                            name: page.liveServiceActive ? "play_circle" : "pause_circle"
+                                            color: page.liveServiceActive ? "#69da8c" : "#d6a3f5"
+                                            iconSize: 23
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 3
+                                        Text {
+                                            text: page.liveServiceActive
+                                                ? "Motor live en ejecucion"
+                                                : (page.liveServiceInstalled
+                                                    ? "Motor live detenido"
+                                                    : "Kilivepaper no instalado")
+                                            color: page.textPrimary
+                                            font.family: page.uiFont
+                                            font.pixelSize: 14
+                                            font.weight: Font.DemiBold
+                                        }
+                                        Text {
+                                            text: page.liveServiceInstalled
+                                                ? "Una sola unidad administra la reproduccion en todas las salidas."
+                                                : "Kilivepaper declara el servicio y Kitsune Compositor lo materializa y registra."
+                                            color: page.textSecondary
+                                            font.family: page.uiFont
+                                            font.pixelSize: 9
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+                                    Repeater {
+                                        model: [
+                                            {"label": "Instalado", "value": page.liveServiceInstalled ? "Si" : "No"},
+                                            {"label": "Habilitado", "value": page.liveServiceEnabled ? "Si" : "No"},
+                                            {"label": "Estado", "value": page.liveServiceState},
+                                            {"label": "Salidas", "value": String(page.liveOutputCount)}
+                                        ]
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 48
+                                            radius: 10
+                                            color: "#0f121c"
+                                            border.color: "#25293a"
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 10
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: modelData.label
+                                                    color: "#8f95a8"
+                                                    font.family: page.uiFont
+                                                    font.pixelSize: 9
+                                                }
+                                                Text {
+                                                    text: modelData.value
+                                                    color: "#d6a3f5"
+                                                    font.family: page.uiFont
+                                                    font.pixelSize: 11
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: liveServiceContent.implicitHeight + 34
+                            radius: 15
+                            color: page.panel
+                            border.color: page.border
+
+                            RowLayout {
+                                id: liveServiceContent
+                                anchors.fill: parent
+                                anchors.margins: 17
+                                spacing: 14
+
+                                Rectangle {
+                                    Layout.preferredWidth: 44
+                                    Layout.preferredHeight: 44
+                                    Layout.alignment: Qt.AlignTop
+                                    radius: 12
+                                    color: "#151824"
+                                    KiIcon {
+                                        anchors.centerIn: parent
+                                        name: "movie"
+                                        color: page.liveServiceActive ? "#69da8c" : "#9da3b7"
+                                        iconSize: 23
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    Text {
+                                        text: "Servicio de reproduccion"
+                                        color: page.textPrimary
+                                        font.family: page.uiFont
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: page.liveServiceUnit
+                                        color: "#aeb3c3"
+                                        elide: Text.ElideMiddle
+                                        font.family: page.uiFont
+                                        font.pixelSize: 9
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Decoder: " + page.liveDecoder
+                                            + "  ·  Backend: " + page.liveBackend
+                                            + "  ·  Biblioteca: " + page.liveLibraryCount
+                                        color: page.textSecondary
+                                        wrapMode: Text.WordWrap
+                                        font.family: page.uiFont
+                                        font.pixelSize: 9
+                                    }
+                                }
+
+                                RowLayout {
+                                    spacing: 8
+                                    KiActionButton {
+                                        text: page.liveServiceInstalled
+                                            ? "Reparar servicio"
+                                            : "Crear servicio"
+                                        tone: page.liveServiceInstalled ? "default" : "primary"
+                                        enabled: kilivepaper && !kilivepaper.busy
+                                        onClicked: kilivepaper.serviceAction("apply")
+                                    }
+                                    KiActionButton {
+                                        visible: page.liveServiceInstalled
+                                        text: page.liveServiceActive ? "Detener" : "Iniciar"
+                                        enabled: kilivepaper && !kilivepaper.busy
+                                        onClicked: kilivepaper.serviceAction(
+                                            page.liveServiceActive ? "stop" : "start")
+                                    }
+                                    KiActionButton {
+                                        visible: page.liveServiceInstalled
+                                        text: "Reiniciar"
+                                        enabled: kilivepaper && !kilivepaper.busy
+                                        onClicked: kilivepaper.serviceAction("restart")
+                                    }
+                                    KiActionButton {
+                                        visible: page.liveServiceInstalled
+                                        text: page.liveServiceEnabled ? "Deshabilitar" : "Habilitar"
+                                        tone: page.liveServiceEnabled ? "default" : "primary"
+                                        enabled: kilivepaper && !kilivepaper.busy
+                                        onClicked: kilivepaper.serviceAction(
+                                            page.liveServiceEnabled ? "disable" : "enable")
+                                    }
+                                }
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Kilivepaper conserva un proceso de motor para todas las pantallas; no crea un servicio por video ni por monitor."
+                            color: "#686f82"
+                            wrapMode: Text.WordWrap
+                            font.family: page.uiFont
+                            font.pixelSize: 9
+                        }
+                    }
+                }
             }
         }
     }
 
     Dialog {
-        id: installServicesDialog
+        id: repairServicesDialog
         anchors.centerIn: parent
         width: Math.min(520, page.width - 80)
         title: page.serviceInstalled > 0
             ? "Reparar servicios de Kitowall"
             : "Instalar servicios de Kitowall"
         modal: true
-        onAccepted: kitowall.installServices()
+        onAccepted: kitowall.repairServices()
 
         contentItem: ColumnLayout {
             width: 450
@@ -1477,7 +2244,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: "Se materializaran y habilitaran las automatizaciones de runtime, rotacion, monitores y restauracion de sesion."
+                text: "Se sobrescribiran, habilitaran y reiniciaran las automatizaciones de runtime, rotacion, monitores y restauracion de sesion usando las definiciones actuales."
                 color: "#d2d4de"
                 wrapMode: Text.WordWrap
                 font.family: page.uiFont
@@ -1513,14 +2280,14 @@ Rectangle {
                 KiActionButton {
                     text: "Cancelar"
                     Layout.preferredWidth: 96
-                    onClicked: installServicesDialog.reject()
+                    onClicked: repairServicesDialog.reject()
                 }
 
                 KiActionButton {
                     text: page.serviceInstalled > 0 ? "Reparar y activar" : "Instalar y activar"
                     tone: "primary"
                     Layout.preferredWidth: 150
-                    onClicked: installServicesDialog.accept()
+                    onClicked: repairServicesDialog.accept()
                 }
             }
         }

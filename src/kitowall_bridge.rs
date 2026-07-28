@@ -14,6 +14,8 @@ use crate::contracts::ContractEnvelope;
 #[derive(Debug, Clone)]
 struct BridgeRuntime {
     binary: PathBuf,
+    kilivepaper: Option<PathBuf>,
+    compositor: PathBuf,
     local: bool,
 }
 
@@ -26,9 +28,19 @@ struct DashboardObserver {
     watched: BTreeMap<PathBuf, RecursiveMode>,
 }
 
-pub fn configure(binary: PathBuf, local: bool) -> Result<(), String> {
+pub fn configure(
+    binary: PathBuf,
+    kilivepaper: Option<PathBuf>,
+    compositor: PathBuf,
+    local: bool,
+) -> Result<(), String> {
     RUNTIME
-        .set(BridgeRuntime { binary, local })
+        .set(BridgeRuntime {
+            binary,
+            kilivepaper,
+            compositor,
+            local,
+        })
         .map_err(|_| "Kitowall bridge runtime was already configured".to_owned())
 }
 
@@ -95,8 +107,8 @@ mod ffi {
         fn refresh_services(self: Pin<&mut KitowallBridge>);
 
         #[qinvokable]
-        #[cxx_name = "installServices"]
-        fn install_services(self: Pin<&mut KitowallBridge>);
+        #[cxx_name = "repairServices"]
+        fn repair_services(self: Pin<&mut KitowallBridge>);
 
         #[qinvokable]
         #[cxx_name = "applyWallpaper"]
@@ -327,11 +339,12 @@ impl ffi::KitowallBridge {
         self.as_mut().set_busy(false);
     }
 
-    fn install_services(mut self: core::pin::Pin<&mut Self>) {
+    fn repair_services(mut self: core::pin::Pin<&mut Self>) {
         self.as_mut().set_busy(true);
         self.as_mut().set_last_error(QString::default());
         let result = invoke(&["service", "apply"])
             .and_then(|_| invoke(&["service", "enable"]))
+            .and_then(|_| invoke(&["service", "restart"]))
             .map(|_| ());
 
         // Always inspect the resulting state: activation can fail after materialization.
@@ -339,11 +352,11 @@ impl ffi::KitowallBridge {
         match result {
             Ok(()) => {
                 self.as_mut()
-                    .set_last_message(QString::from("Servicios instalados y activados"));
+                    .set_last_message(QString::from("Servicios reparados y reiniciados"));
             }
             Err(error) => {
                 self.as_mut().set_last_error(QString::from(&format!(
-                    "La instalacion de servicios no se completo: {error}"
+                    "La reparacion de servicios no se completo: {error}"
                 )));
             }
         }
@@ -360,7 +373,11 @@ impl ffi::KitowallBridge {
         self.as_mut().set_last_error(QString::default());
         let output_name = output.to_string();
         let result = wallpaper_apply_args(&pack.to_string(), &id.to_string(), &output_name)
-            .and_then(invoke_owned);
+            .and_then(invoke_owned)
+            .and_then(|value| {
+                release_live_output(&output_name)?;
+                Ok(value)
+            });
         match result {
             Ok(_) => {
                 let empty_pack = QString::default();
@@ -384,6 +401,9 @@ impl ffi::KitowallBridge {
             let args = wallpaper_apply_batch_args(&pack.to_string(), &id.to_string(), &outputs)?;
             let output_count = outputs.len();
             invoke_owned(args)?;
+            for output in &outputs {
+                release_live_output(output)?;
+            }
             Ok::<usize, String>(output_count)
         })();
         match result {
@@ -1153,6 +1173,35 @@ fn invoke_owned(mut args: Vec<String>) -> Result<Value, String> {
     envelope
         .data
         .ok_or_else(|| "Kitowall no devolvio datos".to_owned())
+}
+
+fn release_live_output(output: &str) -> Result<(), String> {
+    let runtime = RUNTIME
+        .get()
+        .ok_or_else(|| "Kitowall bridge runtime is not configured".to_owned())?;
+    let Some(binary) = &runtime.kilivepaper else {
+        return Ok(());
+    };
+    let result = Command::new(binary)
+        .env("KILIVEPAPER_COMPOSITOR_BIN", &runtime.compositor)
+        .args(["unset", "--monitor", output])
+        .output()
+        .map_err(|error| format!("No se pudo liberar Kilivepaper en {output}: {error}"))?;
+    let envelope = serde_json::from_slice::<ContractEnvelope>(&result.stdout).map_err(|error| {
+        format!(
+            "Kilivepaper devolvio una respuesta invalida al liberar {output}: {error}; {}",
+            String::from_utf8_lossy(&result.stderr).trim()
+        )
+    })?;
+    envelope.validate("kilivepaper")?;
+    if result.status.success() && envelope.ok {
+        Ok(())
+    } else {
+        Err(envelope
+            .error
+            .map(|error| error.message)
+            .unwrap_or_else(|| format!("Kilivepaper no pudo liberar el monitor {output}")))
+    }
 }
 
 #[cfg(test)]

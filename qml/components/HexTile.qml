@@ -33,6 +33,16 @@ Item {
         }
     }
 
+    Image {
+        id: mediaLoader
+
+        visible: false
+        source: root.mediaSource
+        asynchronous: true
+        cache: true
+        onStatusChanged: canvas.requestPaint()
+    }
+
     Canvas {
         id: canvas
         anchors.fill: parent
@@ -63,27 +73,31 @@ Item {
             ctx.fillStyle = gradient
             ctx.fillRect(0, 0, width, height)
 
-            if (root.mediaSource.length > 0 && canvas.isImageLoaded(root.mediaSource)) {
-                if (root.mediaWidth > 0 && root.mediaHeight > 0) {
-                    const sourceRatio = root.mediaWidth / root.mediaHeight
+            if (mediaLoader.status === Image.Ready) {
+                const loadedWidth = root.mediaWidth > 0
+                    ? root.mediaWidth : mediaLoader.sourceSize.width
+                const loadedHeight = root.mediaHeight > 0
+                    ? root.mediaHeight : mediaLoader.sourceSize.height
+                if (loadedWidth > 0 && loadedHeight > 0) {
+                    const sourceRatio = loadedWidth / loadedHeight
                     const targetRatio = width / height
                     let sourceX = 0
                     let sourceY = 0
-                    let sourceWidth = root.mediaWidth
-                    let sourceHeight = root.mediaHeight
+                    let sourceWidth = loadedWidth
+                    let sourceHeight = loadedHeight
                     if (sourceRatio > targetRatio) {
-                        sourceWidth = root.mediaHeight * targetRatio
-                        sourceX = (root.mediaWidth - sourceWidth) * 0.5
+                        sourceWidth = loadedHeight * targetRatio
+                        sourceX = (loadedWidth - sourceWidth) * 0.5
                     } else {
-                        sourceHeight = root.mediaWidth / targetRatio
-                        sourceY = (root.mediaHeight - sourceHeight) * 0.5
+                        sourceHeight = loadedWidth / targetRatio
+                        sourceY = (loadedHeight - sourceHeight) * 0.5
                     }
                     ctx.drawImage(
-                        root.mediaSource,
+                        mediaLoader,
                         sourceX, sourceY, sourceWidth, sourceHeight,
                         0, 0, width, height)
                 } else {
-                    ctx.drawImage(root.mediaSource, 0, 0, width, height)
+                    ctx.drawImage(mediaLoader, 0, 0, width, height)
                 }
             }
 
@@ -124,22 +138,12 @@ Item {
             ctx.stroke()
         }
 
-        onImageLoaded: requestPaint()
     }
 
     onSelectedChanged: canvas.requestPaint()
     onPrimaryColorChanged: canvas.requestPaint()
     onSecondaryColorChanged: canvas.requestPaint()
-    onMediaSourceChanged: {
-        if (mediaSource.length > 0)
-            canvas.loadImage(mediaSource)
-        canvas.requestPaint()
-    }
-
-    Component.onCompleted: {
-        if (mediaSource.length > 0)
-            canvas.loadImage(mediaSource)
-    }
+    onMediaSourceChanged: canvas.requestPaint()
 
     Rectangle {
         visible: root.isFavorite

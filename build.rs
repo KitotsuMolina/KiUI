@@ -5,6 +5,7 @@ fn main() {
         QmlModule::new("dev.kitotsu.kiui")
             .qml_file("qml/main.qml")
             .qml_file("qml/SettingsPage.qml")
+            .qml_file("qml/LiveDownloadsPage.qml")
             .qml_file("qml/components/ConfigField.qml")
             .qml_file("qml/components/MaskMultiSelect.qml")
             .qml_file("qml/components/RatioResolutionSelector.qml")
@@ -18,6 +19,7 @@ fn main() {
             .qml_file("qml/components/KiActionButton.qml"),
     )
     .file("src/kitowall_bridge.rs")
+    .file("src/kilivepaper_bridge.rs")
     .qrc_resources(["qml/assets/MaterialSymbolsRounded-KiUI.ttf"])
     .qt_module("Network")
     .qt_module("QuickControls2")

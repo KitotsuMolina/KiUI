@@ -16,6 +16,8 @@ Item {
     property int mediaWidth: 0
     property int mediaHeight: 0
     property bool selected: false
+    property color accent: "#ad3cf3"
+    property color accentBright: "#d16cff"
     signal activated(int itemIndex)
 
     width: 146
@@ -132,8 +134,9 @@ Item {
             ctx.restore()
 
             traceHex(ctx)
-            ctx.strokeStyle = root.selected ? "#cf63ff"
-                : pointer.hovered ? "#9f51d1" : "rgba(205, 213, 232, 0.42)"
+            ctx.strokeStyle = root.selected ? String(root.accentBright)
+                : pointer.hovered ? String(root.accent)
+                    : "rgba(205, 213, 232, 0.42)"
             ctx.lineWidth = root.selected ? 3 : 1.3
             ctx.stroke()
         }
@@ -144,6 +147,8 @@ Item {
     onPrimaryColorChanged: canvas.requestPaint()
     onSecondaryColorChanged: canvas.requestPaint()
     onMediaSourceChanged: canvas.requestPaint()
+    onAccentChanged: canvas.requestPaint()
+    onAccentBrightChanged: canvas.requestPaint()
 
     Rectangle {
         visible: root.isFavorite

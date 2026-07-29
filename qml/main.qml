@@ -29,6 +29,8 @@ ApplicationWindow {
     property int rotationIntervalSeconds: 1800
     property string transitionType: "center"
     property real transitionDuration: 2
+    property bool dynamicColorsEnabled: false
+    property string dynamicColorsOutput: ""
     readonly property var transitionTypes: [
         "simple", "fade", "left", "right", "top", "bottom", "wipe",
         "wave", "grow", "center", "outer", "any", "random"
@@ -44,14 +46,32 @@ ApplicationWindow {
     property var historyEntries: []
     property bool compactSidebar: width < 1040
     property bool showDetails: width >= 1180
-    readonly property color accent: "#ad3cf3"
-    readonly property color accentBright: "#d16cff"
+    readonly property var appearanceState: parseJson(
+        kitowallBridge.appearanceJson, {})
+    readonly property var appearancePalette: appearanceState.palette || ({})
+    readonly property bool dynamicThemeAvailable: dynamicColorsEnabled
+        && Boolean(appearanceState.active)
+        && String(appearancePalette.accent_mid || "").length > 0
+    property color accent: dynamicThemeAvailable
+        ? String(appearancePalette.accent_mid) : "#ad3cf3"
+    property color accentBright: dynamicThemeAvailable
+        ? String(appearancePalette.accent_light) : "#d16cff"
+    property color accentDark: dynamicThemeAvailable
+        ? String(appearancePalette.accent_dark) : "#7113b9"
+    property color accentForeground: dynamicThemeAvailable
+        ? String(appearancePalette.foreground) : "#ffffff"
+    readonly property color accentSurface: Qt.rgba(
+        accent.r, accent.g, accent.b, 0.22)
     readonly property color panel: "#d90b0d18"
     readonly property color panelSolid: "#10121d"
     readonly property color border: "#2a2d3d"
     readonly property color textPrimary: "#f3f1f8"
     readonly property color textSecondary: "#9196aa"
     readonly property string uiFont: "CaskaydiaCove Nerd Font Propo"
+
+    Behavior on accent { ColorAnimation { duration: 260 } }
+    Behavior on accentBright { ColorAnimation { duration: 260 } }
+    Behavior on accentDark { ColorAnimation { duration: 260 } }
 
     onActiveViewChanged: {
         if (activeView === "library" && !kilivepaperBridge.busy)
@@ -505,6 +525,19 @@ ApplicationWindow {
         transitionDuration = Number(transition.duration || 0)
     }
 
+    function loadAppearancePolicy() {
+        var policy = parseJson(kitowallBridge.appearancePolicyJson, {})
+        dynamicColorsEnabled = Boolean(policy.enabled)
+        dynamicColorsOutput = String(policy.source_output || "")
+    }
+
+    function toggleDynamicColors() {
+        if (kitowallBridge.busy)
+            return
+        kitowallBridge.setAppearancePolicyEnabled(
+            !dynamicColorsEnabled, selectedOutput)
+    }
+
     function toggleRotation() {
         if (!kitowallBridge.busy)
             kitowallBridge.setRotationEnabled(!rotationEnabled)
@@ -578,6 +611,7 @@ ApplicationWindow {
         onHistoryJsonChanged: root.loadHistoryCount()
         onJobsJsonChanged: root.loadDashboardJobs()
         onOutputsJsonChanged: root.loadOutputs()
+        onAppearancePolicyJsonChanged: root.loadAppearancePolicy()
         onPacksJsonChanged: root.loadPacks()
         onLastMessageChanged: {
             if (lastMessage.indexOf("Wallpaper aplicado") === 0
@@ -586,6 +620,7 @@ ApplicationWindow {
                     || lastMessage.indexOf("Intervalo de rotacion") === 0
                     || lastMessage.indexOf("Transicion actualizada") === 0
                     || lastMessage.indexOf("Duracion de transicion") === 0
+                    || lastMessage.indexOf("Colores dinamicos") === 0
                     || lastMessage.indexOf("Wallpaper agregado a favoritos") === 0
                     || lastMessage.indexOf("Wallpaper eliminado de favoritos") === 0) {
                 kitowallBridge.refreshDashboard(root.selectedPack, true)
@@ -712,14 +747,14 @@ ApplicationWindow {
                     radius: 12
                     anchors.verticalCenter: parent.verticalCenter
                     gradient: Gradient {
-                        GradientStop { position: 0; color: "#ca50ff" }
-                        GradientStop { position: 1; color: "#6820cf" }
+                        GradientStop { position: 0; color: root.accentBright }
+                        GradientStop { position: 1; color: root.accentDark }
                     }
 
                     Text {
                         anchors.centerIn: parent
                         text: "Ki"
-                        color: "white"
+                        color: root.accentForeground
                         font.family: root.uiFont
                         font.pixelSize: 14
                         font.bold: true
@@ -761,6 +796,8 @@ ApplicationWindow {
                     displayCount: count
                     displayIcon: iconName
                     compact: root.compactSidebar
+                    accent: root.accent
+                    accentBright: root.accentBright
                     selected: root.activeSource === index
                     onActivated: {
                         root.activeView = "library"
@@ -789,6 +826,8 @@ ApplicationWindow {
                 displayIcon: "favorite"
                 displayCount: root.favoriteCount
                 compact: root.compactSidebar
+                accent: root.accent
+                accentBright: root.accentBright
                 selected: root.activeFilter === 3
                 onActivated: {
                     root.activeFilter = root.activeFilter === 3 ? 0 : 3
@@ -805,6 +844,8 @@ ApplicationWindow {
                 trailingIcon: root.colorFiltersExpanded
                     ? "keyboard_arrow_up" : "keyboard_arrow_down"
                 compact: root.compactSidebar
+                accent: root.accent
+                accentBright: root.accentBright
                 selected: root.selectedColor.length > 0
                 onActivated: {
                     root.colorFiltersExpanded = !root.colorFiltersExpanded
@@ -867,6 +908,8 @@ ApplicationWindow {
                 trailingIcon: root.resolutionFiltersExpanded
                     ? "keyboard_arrow_up" : "keyboard_arrow_down"
                 compact: root.compactSidebar
+                accent: root.accent
+                accentBright: root.accentBright
                 selected: root.minimumFilterWidth > 0
                 onActivated: {
                     root.resolutionFiltersExpanded = !root.resolutionFiltersExpanded
@@ -896,9 +939,10 @@ ApplicationWindow {
                         background: Rectangle {
                             radius: 8
                             color: root.minimumFilterWidth === minWidth
-                                ? "#35144e" : (parent.hovered ? "#171a27" : "transparent")
+                                ? root.accentSurface
+                                : (parent.hovered ? "#171a27" : "transparent")
                             border.color: root.minimumFilterWidth === minWidth
-                                ? "#74309c" : "#272b39"
+                                ? root.accent : "#272b39"
                         }
                         contentItem: Text {
                             text: parent.text
@@ -930,6 +974,8 @@ ApplicationWindow {
                 displayLabel: "Descargas live"
                 displayIcon: "cloud_download"
                 compact: root.compactSidebar
+                accent: root.accent
+                accentBright: root.accentBright
                 selected: root.activeView === "liveDownloads"
                 onActivated: {
                     root.activeView = "liveDownloads"
@@ -1181,13 +1227,13 @@ ApplicationWindow {
                     radius: 10
                     opacity: parent.enabled ? 1 : 0.45
                     gradient: Gradient {
-                        GradientStop { position: 0; color: "#b72df2" }
-                        GradientStop { position: 1; color: "#7515bf" }
+                        GradientStop { position: 0; color: root.accentBright }
+                        GradientStop { position: 1; color: root.accentDark }
                     }
                 }
                 contentItem: Text {
                     text: parent.text
-                    color: "white"
+                    color: root.accentForeground
                     font.family: root.uiFont
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
@@ -1264,7 +1310,7 @@ ApplicationWindow {
                 height: 44
                 model: outputsModel
                 textRole: "outputName"
-                enabled: outputsModel.count > 0 && !kitowallBridge.busy
+                enabled: outputsModel.count > 0
                 displayText: currentIndex >= 0 && currentIndex < outputsModel.count
                     ? outputsModel.get(currentIndex).outputName
                     : "Sin monitores"
@@ -1328,7 +1374,7 @@ ApplicationWindow {
                         elide: Text.ElideRight
                     }
                     background: Rectangle {
-                        color: parent.highlighted ? "#321052" : "#11131f"
+                        color: parent.highlighted ? root.accentSurface : "#11131f"
                     }
                 }
                 popup: Popup {
@@ -1336,6 +1382,8 @@ ApplicationWindow {
                     width: outputSelect.width
                     implicitHeight: Math.min(contentItem.implicitHeight + 8, 220)
                     padding: 4
+                    closePolicy: Popup.CloseOnEscape
+                        | Popup.CloseOnPressOutsideParent
                     contentItem: ListView {
                         clip: true
                         implicitHeight: contentHeight
@@ -1384,6 +1432,8 @@ ApplicationWindow {
                             label: modelLabel
                             count: modelCount
                             iconName: modelIcon
+                            accent: root.accent
+                            accentBright: root.accentBright
                             selected: root.activeFilter === index
                             onActivated: {
                                 root.activeFilter = root.activeFilter === index
@@ -1465,7 +1515,7 @@ ApplicationWindow {
                         elide: Text.ElideRight
                     }
                     background: Rectangle {
-                        color: parent.highlighted ? "#321052" : "#11131f"
+                        color: parent.highlighted ? root.accentSurface : "#11131f"
                     }
                 }
                 popup: Popup {
@@ -1498,6 +1548,8 @@ ApplicationWindow {
             anchors.bottomMargin: 14
             wallpaperModel: wallpapers
             currentIndex: root.selectedIndex
+            accent: root.accent
+            accentBright: root.accentBright
             onSelected: function(itemIndex) {
                 root.selectedIndex = itemIndex
             }
@@ -1548,7 +1600,7 @@ ApplicationWindow {
 
         Rectangle {
             id: rotationDock
-            width: Math.min(690, parent.width - 24)
+            width: Math.min(815, parent.width - 24)
             height: 74
             radius: 20
             anchors.horizontalCenter: parent.horizontalCenter
@@ -1587,11 +1639,18 @@ ApplicationWindow {
                             "value": root.transitionDurationLabel(),
                             "accent": false,
                             "icon": "timer"
+                        },
+                        {
+                            "title": "Colores",
+                            "value": root.dynamicColorsEnabled
+                                ? "Activados" : "Desactivados",
+                            "accent": root.dynamicColorsEnabled,
+                            "icon": "palette"
                         }
                     ]
                     delegate: Item {
                         required property var modelData
-                        width: modelData.title === "Cambiar" ? 116 : 125
+                        width: Math.floor((rotationDock.width - 12) / 6)
                         height: 52
 
                         Button {
@@ -1606,11 +1665,11 @@ ApplicationWindow {
                             background: Rectangle {
                                 radius: 31
                                 color: parent.pressed
-                                    ? "#52177e"
-                                    : (parent.hovered ? "#3b125f" : "#2b1049")
+                                    ? root.accentDark
+                                    : root.accentSurface
                                 border.width: 2
                                 border.color: parent.activeFocus
-                                    ? "#e6a8ff" : root.accent
+                                    ? root.accentBright : root.accent
                                 opacity: parent.enabled ? 1 : 0.48
                             }
 
@@ -1790,12 +1849,58 @@ ApplicationWindow {
                             ToolTip.text: "Cambiar duracion de la animacion"
                         }
 
+                        Button {
+                            visible: modelData.title === "Colores"
+                            anchors.fill: parent
+                            enabled: !kitowallBridge.busy
+                                && root.selectedOutput.length > 0
+                            hoverEnabled: true
+                            onClicked: root.toggleDynamicColors()
+
+                            background: Rectangle {
+                                radius: 13
+                                color: parent.pressed
+                                    ? "#271335"
+                                    : (parent.hovered ? "#191526" : "transparent")
+                                border.width: parent.activeFocus ? 1 : 0
+                                border.color: root.accentBright
+                                opacity: parent.enabled ? 1 : 0.5
+                            }
+
+                            contentItem: Row {
+                                spacing: 9
+
+                                KiIcon {
+                                    width: 24
+                                    height: 24
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    name: modelData.icon
+                                    color: modelData.accent ? "#67dd80" : "#9297aa"
+                                    iconSize: 21
+                                }
+
+                                Column {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 3
+                                    Text { text: modelData.title; color: "#d4d6e0"; font.family: root.uiFont; font.pixelSize: 11 }
+                                    Text { text: modelData.value; color: modelData.accent ? "#67dd80" : "#9297aa"; font.family: root.uiFont; font.pixelSize: 10 }
+                                }
+                            }
+
+                            ToolTip.visible: hovered
+                            ToolTip.text: root.dynamicColorsEnabled
+                                ? "Desactivar sincronizacion de colores"
+                                : "Usar " + root.selectedOutput
+                                    + " como fuente de colores"
+                        }
+
                         Row {
                             visible: modelData.title !== "Cambiar"
                                 && modelData.title !== "Rotacion"
                                 && modelData.title !== "Intervalo"
                                 && modelData.title !== "Transicion"
                                 && modelData.title !== "Duracion"
+                                && modelData.title !== "Colores"
                             anchors.centerIn: parent
                             spacing: 9
 
@@ -1845,6 +1950,10 @@ ApplicationWindow {
         anchors.bottomMargin: 24
         outputModel: outputsModel
         selectedOutput: root.selectedOutput
+        accent: root.accent
+        accentBright: root.accentBright
+        accentDark: root.accentDark
+        accentForeground: root.accentForeground
         onLibraryChanged: {
             if (!kilivepaperBridge.busy)
                 kilivepaperBridge.refreshLibrary()
@@ -1868,6 +1977,12 @@ ApplicationWindow {
         onLoaded: {
             item.kitowall = kitowallBridge
             item.kilivepaper = kilivepaperBridge
+            item.accent = Qt.binding(function() { return root.accent })
+            item.accentBright = Qt.binding(function() { return root.accentBright })
+            item.accentDark = Qt.binding(function() { return root.accentDark })
+            item.accentForeground = Qt.binding(function() {
+                return root.accentForeground
+            })
             item.refreshAll()
         }
     }
@@ -1942,6 +2057,8 @@ ApplicationWindow {
     Component.onCompleted: {
         kitowallBridge.refresh()
         kitowallBridge.refreshOutputs()
+        kitowallBridge.refreshAppearancePolicy()
+        kitowallBridge.refreshAppearance()
         kitowallBridge.refreshDashboard("", true)
         kilivepaperBridge.refreshLibrary()
         hexGrid.forceActiveFocus()

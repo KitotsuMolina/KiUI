@@ -116,3 +116,15 @@ esos campos. KiUI no edita directamente el JSON de configuracion.
 La deteccion de outputs requiere que KiUI herede la sesion grafica del usuario. Una
 ejecucion desde una terminal aislada, un contenedor o una sesion sin los sockets del
 compositor puede mostrar `Sin monitores` aunque el equipo tenga pantallas conectadas.
+La barra inferior permite activar o desactivar la sincronizacion automatica de
+colores para el monitor seleccionado. El control consulta
+`appearance policy show` al iniciar y usa `appearance policy enable --confirm`
+o `appearance policy disable`; KiUI no escribe directamente la configuracion
+del compositor.
+
+Cuando la politica esta activa, KiUI consume `appearance current` y deriva sus
+tokens visuales de `accent_mid`, `accent_light`, `accent_dark` y `foreground`.
+El archivo de estado del compositor se observa mediante eventos de filesystem,
+por lo que una rotacion actualiza el tema sin sondeo continuo ni recarga del
+catalogo. Los colores semanticos de exito, advertencia y error no se sustituyen
+por la paleta del wallpaper.

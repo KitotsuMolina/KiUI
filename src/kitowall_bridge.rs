@@ -4,6 +4,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+use cxx_qt::Threading;
 use cxx_qt_lib::QString;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Deserialize;
@@ -21,6 +22,7 @@ struct BridgeRuntime {
 
 static RUNTIME: OnceLock<BridgeRuntime> = OnceLock::new();
 static DASHBOARD_DIRTY: AtomicBool = AtomicBool::new(true);
+static APPEARANCE_REFRESH_PENDING: AtomicBool = AtomicBool::new(false);
 static DASHBOARD_OBSERVER: OnceLock<Result<Mutex<DashboardObserver>, String>> = OnceLock::new();
 
 struct DashboardObserver {
@@ -53,6 +55,8 @@ pub struct KitowallBridgeRust {
     history_json: QString,
     outputs_json: QString,
     services_json: QString,
+    appearance_policy_json: QString,
+    appearance_json: QString,
     dashboard_revision: QString,
     last_error: QString,
     last_message: QString,
@@ -77,6 +81,8 @@ mod ffi {
         #[qproperty(QString, history_json, cxx_name = "historyJson")]
         #[qproperty(QString, outputs_json, cxx_name = "outputsJson")]
         #[qproperty(QString, services_json, cxx_name = "servicesJson")]
+        #[qproperty(QString, appearance_policy_json, cxx_name = "appearancePolicyJson")]
+        #[qproperty(QString, appearance_json, cxx_name = "appearanceJson")]
         #[qproperty(QString, dashboard_revision, cxx_name = "dashboardRevision")]
         #[qproperty(QString, last_error, cxx_name = "lastError")]
         #[qproperty(QString, last_message, cxx_name = "lastMessage")]
@@ -105,6 +111,22 @@ mod ffi {
         #[qinvokable]
         #[cxx_name = "refreshServices"]
         fn refresh_services(self: Pin<&mut KitowallBridge>);
+
+        #[qinvokable]
+        #[cxx_name = "refreshAppearancePolicy"]
+        fn refresh_appearance_policy(self: Pin<&mut KitowallBridge>);
+
+        #[qinvokable]
+        #[cxx_name = "refreshAppearance"]
+        fn refresh_appearance(self: Pin<&mut KitowallBridge>);
+
+        #[qinvokable]
+        #[cxx_name = "setAppearancePolicyEnabled"]
+        fn set_appearance_policy_enabled(
+            self: Pin<&mut KitowallBridge>,
+            enabled: bool,
+            output: &QString,
+        );
 
         #[qinvokable]
         #[cxx_name = "repairServices"]
@@ -182,6 +204,8 @@ mod ffi {
             count: i32,
         );
     }
+
+    impl cxx_qt::Threading for KitowallBridge {}
 }
 
 impl ffi::KitowallBridge {
@@ -217,10 +241,9 @@ impl ffi::KitowallBridge {
             return;
         }
 
-        self.as_mut().set_busy(true);
         let pack = pack.to_string();
         let result = invoke_owned(dashboard_snapshot_args(&pack)).and_then(|snapshot| {
-            let watch_paths = snapshot
+            let mut watch_paths = snapshot
                 .get("watchPaths")
                 .and_then(Value::as_array)
                 .map(|paths| {
@@ -231,12 +254,20 @@ impl ffi::KitowallBridge {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
+            watch_paths.push(appearance_state_path());
             update_dashboard_watches(&watch_paths)?;
-            Ok(snapshot)
+            let appearance = invoke_compositor(&["appearance", "current"])
+                .and_then(|value| serde_json::to_string(&value).map_err(|error| error.to_string()))
+                .ok();
+            Ok((snapshot, appearance))
         });
         match result {
-            Ok(snapshot) => {
+            Ok((snapshot, appearance)) => {
                 self.as_mut().set_last_error(QString::default());
+                if let Some(appearance) = appearance {
+                    self.as_mut()
+                        .set_appearance_json(QString::from(&appearance));
+                }
                 let revision = snapshot
                     .get("revision")
                     .and_then(Value::as_str)
@@ -258,7 +289,6 @@ impl ffi::KitowallBridge {
                 DASHBOARD_DIRTY.store(true, Ordering::Release);
             }
         }
-        self.as_mut().set_busy(false);
     }
 
     fn refresh_jobs(mut self: core::pin::Pin<&mut Self>) {
@@ -335,6 +365,88 @@ impl ffi::KitowallBridge {
                     .set_services_json(QString::from(r#"{"automations":[]}"#));
                 self.as_mut().set_last_error(QString::from(&error));
             }
+        }
+        self.as_mut().set_busy(false);
+    }
+
+    fn refresh_appearance_policy(mut self: core::pin::Pin<&mut Self>) {
+        match invoke_compositor(&["appearance", "policy", "show"])
+            .and_then(|policy| serde_json::to_string(&policy).map_err(|error| error.to_string()))
+        {
+            Ok(policy) => self
+                .as_mut()
+                .set_appearance_policy_json(QString::from(&policy)),
+            Err(error) => self.as_mut().set_last_error(QString::from(&error)),
+        }
+    }
+
+    fn refresh_appearance(self: core::pin::Pin<&mut Self>) {
+        if APPEARANCE_REFRESH_PENDING
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+        let qt_thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let result = invoke_compositor(&["appearance", "current"]).and_then(|appearance| {
+                serde_json::to_string(&appearance).map_err(|error| error.to_string())
+            });
+            let queued = qt_thread.queue(move |mut bridge| {
+                if let Ok(appearance) = result {
+                    bridge
+                        .as_mut()
+                        .set_appearance_json(QString::from(&appearance));
+                }
+                APPEARANCE_REFRESH_PENDING.store(false, Ordering::Release);
+            });
+            if queued.is_err() {
+                APPEARANCE_REFRESH_PENDING.store(false, Ordering::Release);
+            }
+        });
+    }
+
+    fn set_appearance_policy_enabled(
+        mut self: core::pin::Pin<&mut Self>,
+        enabled: bool,
+        output: &QString,
+    ) {
+        self.as_mut().set_busy(true);
+        self.as_mut().set_last_error(QString::default());
+        let output = output.to_string();
+        let result = if enabled {
+            if output.trim().is_empty() {
+                Err("Selecciona un monitor antes de activar los colores dinamicos".into())
+            } else {
+                invoke_compositor(&[
+                    "appearance",
+                    "policy",
+                    "enable",
+                    "--output",
+                    &output,
+                    "--confirm",
+                ])
+            }
+        } else {
+            invoke_compositor(&["appearance", "policy", "disable"])
+        }
+        .and_then(|_| invoke_compositor(&["appearance", "policy", "show"]));
+
+        match result {
+            Ok(policy) => match serde_json::to_string(&policy).map_err(|error| error.to_string()) {
+                Ok(policy) => {
+                    self.as_mut()
+                        .set_appearance_policy_json(QString::from(&policy));
+                    let message = if enabled {
+                        format!("Colores dinamicos activados para {output}")
+                    } else {
+                        "Colores dinamicos desactivados".into()
+                    };
+                    self.as_mut().set_last_message(QString::from(&message));
+                }
+                Err(error) => self.as_mut().set_last_error(QString::from(&error)),
+            },
+            Err(error) => self.as_mut().set_last_error(QString::from(&error)),
         }
         self.as_mut().set_busy(false);
     }
@@ -422,21 +534,40 @@ impl ffi::KitowallBridge {
     }
 
     fn rotate_now(mut self: core::pin::Pin<&mut Self>, pack: &QString) {
+        if *self.busy() {
+            return;
+        }
         self.as_mut().set_busy(true);
         self.as_mut().set_last_error(QString::default());
         let pack = pack.to_string();
-        match invoke_owned(rotate_now_args(&pack)) {
-            Ok(_) => {
-                let refresh_pack = QString::from(pack.as_str());
-                self.as_mut().refresh_catalog(&refresh_pack, 0, 200);
-                self.as_mut()
-                    .set_last_message(QString::from("Wallpaper cambiado correctamente"));
-            }
-            Err(error) => {
-                self.as_mut().set_last_error(QString::from(&error));
-                self.as_mut().set_busy(false);
-            }
-        }
+        let qt_thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let result = invoke_owned(rotate_now_args(&pack)).and_then(|_| {
+                let catalog = invoke_owned(catalog_args(&pack, 0, 200)).and_then(|value| {
+                    serde_json::to_string(&value).map_err(|error| error.to_string())
+                })?;
+                let history = invoke(&["history", "list"]).and_then(|value| {
+                    serde_json::to_string(&value).map_err(|error| error.to_string())
+                })?;
+                Ok((catalog, history))
+            });
+            qt_thread
+                .queue(move |mut bridge| {
+                    match result {
+                        Ok((catalog, history)) => {
+                            bridge.as_mut().set_catalog_json(QString::from(&catalog));
+                            bridge.as_mut().set_history_json(QString::from(&history));
+                            bridge.as_mut().set_last_message(QString::from(
+                                "Wallpaper cambiado correctamente",
+                            ));
+                            DASHBOARD_DIRTY.store(true, Ordering::Release);
+                        }
+                        Err(error) => bridge.as_mut().set_last_error(QString::from(&error)),
+                    }
+                    bridge.as_mut().set_busy(false);
+                })
+                .ok();
+        });
     }
 
     fn set_rotation_enabled(mut self: core::pin::Pin<&mut Self>, enabled: bool) {
@@ -800,6 +931,18 @@ fn watch_target(path: &PathBuf) -> Option<(PathBuf, RecursiveMode)> {
         candidate = candidate.parent()?;
     }
     Some((candidate.to_path_buf(), RecursiveMode::NonRecursive))
+}
+
+fn appearance_state_path() -> PathBuf {
+    std::env::var("KITSUNE_COMPOSITOR_APPEARANCE_STATE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            std::env::var("XDG_STATE_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from(home).join(".local/state"))
+                .join("kitsune-compositor/appearance.json")
+        })
 }
 
 fn output_names(data: &Value) -> Result<Vec<String>, String> {
@@ -1173,6 +1316,40 @@ fn invoke_owned(mut args: Vec<String>) -> Result<Value, String> {
     envelope
         .data
         .ok_or_else(|| "Kitowall no devolvio datos".to_owned())
+}
+
+fn invoke_compositor(args: &[&str]) -> Result<Value, String> {
+    let runtime = RUNTIME
+        .get()
+        .ok_or_else(|| "Kitowall bridge runtime is not configured".to_owned())?;
+    let mut arguments = args
+        .iter()
+        .map(|argument| (*argument).to_owned())
+        .collect::<Vec<_>>();
+    if runtime.local {
+        arguments.push("--lc".into());
+    }
+    arguments.push("--contract-v1".into());
+    let output = Command::new(&runtime.compositor)
+        .args(&arguments)
+        .output()
+        .map_err(|error| format!("No se pudo ejecutar Kitsune Compositor: {error}"))?;
+    let envelope = serde_json::from_slice::<ContractEnvelope>(&output.stdout).map_err(|error| {
+        format!(
+            "Kitsune Compositor devolvio una respuesta invalida: {error}; {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+    })?;
+    envelope.validate("kitsune-compositor")?;
+    if !output.status.success() || !envelope.ok {
+        return Err(envelope
+            .error
+            .map(|error| error.message)
+            .unwrap_or_else(|| "Kitsune Compositor fallo sin detalle".into()));
+    }
+    envelope
+        .data
+        .ok_or_else(|| "Kitsune Compositor no devolvio datos".to_owned())
 }
 
 fn release_live_output(output: &str) -> Result<(), String> {

@@ -9,6 +9,8 @@ Item {
     property real tileGap: 10
     property real horizontalPadding: 18
     property real verticalPadding: 28
+    property color accent: "#ad3cf3"
+    property color accentBright: "#d16cff"
     readonly property int itemCount: wallpaperModel ? wallpaperModel.count : 0
     readonly property int rowCount: Math.ceil(itemCount / columns)
     readonly property real staggerWidth: rowCount > 1 ? 0.5 : 0
@@ -81,6 +83,8 @@ Item {
                 mediaSource: previewSource
                 mediaWidth: sourceWidth
                 mediaHeight: sourceHeight
+                accent: root.accent
+                accentBright: root.accentBright
                 width: root.tileWidth
                 height: root.tileHeight
                 x: root.originX + columnIndex * root.horizontalPitch
@@ -103,6 +107,8 @@ Item {
         anchors.top: parent.top
         active: root.canScrollUp
         topEdge: true
+        accent: root.accent
+        accentBright: root.accentBright
         z: 10
     }
 
@@ -112,6 +118,8 @@ Item {
         anchors.bottom: parent.bottom
         active: root.canScrollDown
         topEdge: false
+        accent: root.accent
+        accentBright: root.accentBright
         z: 10
     }
 

@@ -7,6 +7,9 @@ ColumnLayout {
 
     property string selectedColor: ""
     property string fontFamily: "CaskaydiaCove Nerd Font Propo"
+    readonly property var themeWindow: ApplicationWindow.window
+    readonly property color accentBright: themeWindow
+        && themeWindow.accentBright ? themeWindow.accentBright : "#d16cff"
     readonly property var colors: [
         "660000", "990000", "cc0000", "cc3333", "ea4c88", "993399",
         "663399", "333399", "0066cc", "0099cc", "66cccc", "77cc33",
@@ -151,7 +154,7 @@ ColumnLayout {
                                 ? "#" + parent.modelData : "#10131f"
                             border.width: control.selectedColor === parent.modelData ? 3 : 1
                             border.color: control.selectedColor === parent.modelData
-                                ? "#d16cff"
+                                ? control.accentBright
                                 : (parent.modelData === "ffffff" ? "#777b8d" : "#3b3f50")
 
                             KiIcon {

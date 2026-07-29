@@ -34,8 +34,12 @@ Rectangle {
     property int liveOutputCount: 0
     property string liveLibraryRoot: ""
     property string liveMapFile: ""
-    readonly property color accent: "#ad3cf3"
-    readonly property color accentBright: "#d16cff"
+    property color accent: "#ad3cf3"
+    property color accentBright: "#d16cff"
+    property color accentDark: "#7113b9"
+    property color accentForeground: "#ffffff"
+    readonly property color accentSurface: Qt.rgba(
+        accent.r, accent.g, accent.b, 0.22)
     readonly property color panel: "#d90b0d18"
     readonly property color border: "#2a2d3d"
     readonly property color textPrimary: "#f3f1f8"
@@ -677,10 +681,11 @@ Rectangle {
                         background: Rectangle {
                             radius: 12
                             color: page.activeSection === modelData.section
-                                ? "#3a1262"
+                                ? page.accentSurface
                                 : (sectionButton.hovered ? "#171a27" : "transparent")
                             border.width: 1
-                            border.color: page.activeSection === modelData.section ? "#8632b9" : "transparent"
+                            border.color: page.activeSection === modelData.section
+                                ? page.accent : "transparent"
 
                             Rectangle {
                                 visible: page.activeSection === modelData.section
@@ -759,11 +764,11 @@ Rectangle {
                         background: Rectangle {
                             radius: 12
                             color: page.activeSection === modelData.section
-                                ? "#3a1262"
+                                ? page.accentSurface
                                 : (liveSectionButton.hovered ? "#171a27" : "transparent")
                             border.width: 1
                             border.color: page.activeSection === modelData.section
-                                ? "#8632b9" : "transparent"
+                                ? page.accent : "transparent"
 
                             Rectangle {
                                 visible: page.activeSection === modelData.section
@@ -901,13 +906,13 @@ Rectangle {
                         radius: 10
                         opacity: parent.enabled ? 1 : 0.5
                         gradient: Gradient {
-                            GradientStop { position: 0; color: "#bd37f5" }
-                            GradientStop { position: 1; color: "#7113b9" }
+                            GradientStop { position: 0; color: page.accentBright }
+                            GradientStop { position: 1; color: page.accentDark }
                         }
                     }
                     contentItem: Text {
                         text: parent.text
-                        color: "white"
+                        color: page.accentForeground
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                         font.family: page.uiFont
@@ -1014,11 +1019,11 @@ Rectangle {
                     background: Rectangle {
                         radius: 11
                         gradient: Gradient {
-                            GradientStop { position: 0; color: "#bd37f5" }
-                            GradientStop { position: 1; color: "#7113b9" }
+                            GradientStop { position: 0; color: page.accentBright }
+                            GradientStop { position: 1; color: page.accentDark }
                         }
                     }
-                    contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: page.uiFont; font.pixelSize: 11; font.weight: Font.DemiBold }
+                    contentItem: Text { text: parent.text; color: page.accentForeground; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: page.uiFont; font.pixelSize: 11; font.weight: Font.DemiBold }
                 }
             }
                 }
@@ -1061,7 +1066,7 @@ Rectangle {
                             width: ListView.view.width
                             height: 58
                             onClicked: page.editPack(name, configJson)
-                            background: Rectangle { radius: 11; color: page.selectedPackName === name ? "#32134f" : (parent.hovered ? "#171a27" : "#0e111b"); border.color: page.selectedPackName === name ? "#74309c" : "#252938" }
+                            background: Rectangle { radius: 11; color: page.selectedPackName === name ? page.accentSurface : (parent.hovered ? "#171a27" : "#0e111b"); border.color: page.selectedPackName === name ? page.accent : "#252938" }
                             contentItem: RowLayout {
                                 Rectangle {
                                     width: 34; height: 34; radius: 10; color: "#251337"
@@ -1383,7 +1388,7 @@ Rectangle {
                                                     radius: 4
                                                     gradient: Gradient {
                                                         GradientStop { position: 0; color: "#7d2bc2" }
-                                                        GradientStop { position: 1; color: "#d16cff" }
+                                                        GradientStop { position: 1; color: page.accentBright }
                                                     }
                                                 }
                                             }
@@ -1417,11 +1422,11 @@ Rectangle {
                             background: Rectangle {
                                 radius: 10
                                 gradient: Gradient {
-                                    GradientStop { position: 0; color: "#bd37f5" }
-                                    GradientStop { position: 1; color: "#7113b9" }
+                                    GradientStop { position: 0; color: page.accentBright }
+                                    GradientStop { position: 1; color: page.accentDark }
                                 }
                             }
-                            contentItem: Text { text: parent.text; color: "white"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: page.uiFont; font.pixelSize: 10; font.weight: Font.DemiBold }
+                            contentItem: Text { text: parent.text; color: page.accentForeground; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.family: page.uiFont; font.pixelSize: 10; font.weight: Font.DemiBold }
                         }
                     }
                 }
@@ -2002,13 +2007,13 @@ Rectangle {
                                 radius: 11
                                 opacity: parent.enabled ? 1 : 0.5
                                 gradient: Gradient {
-                                    GradientStop { position: 0; color: "#bd37f5" }
-                                    GradientStop { position: 1; color: "#7113b9" }
+                                    GradientStop { position: 0; color: page.accentBright }
+                                    GradientStop { position: 1; color: page.accentDark }
                                 }
                             }
                             contentItem: Text {
                                 text: parent.text
-                                color: "white"
+                                color: page.accentForeground
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 font.family: page.uiFont

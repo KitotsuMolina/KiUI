@@ -7,6 +7,15 @@ Button {
     property string tone: "secondary"
     property string iconName: ""
     property string fontFamily: "CaskaydiaCove Nerd Font Propo"
+    readonly property var themeWindow: ApplicationWindow.window
+    readonly property color accent: themeWindow && themeWindow.accent
+        ? themeWindow.accent : "#ad3cf3"
+    readonly property color accentBright: themeWindow && themeWindow.accentBright
+        ? themeWindow.accentBright : "#d16cff"
+    readonly property color accentDark: themeWindow && themeWindow.accentDark
+        ? themeWindow.accentDark : "#7113b9"
+    readonly property color accentForeground: themeWindow
+        && themeWindow.accentForeground ? themeWindow.accentForeground : "#ffffff"
 
     implicitWidth: Math.max(88, label.implicitWidth + (iconName.length > 0 ? 48 : 30))
     implicitHeight: 36
@@ -19,7 +28,7 @@ Button {
         if (!enabled)
             return "#10121a"
         if (tone === "primary")
-            return down ? "#7113b9" : (hovered ? "#a526df" : "#8d1dce")
+            return down ? accentDark : (hovered ? accentBright : accent)
         if (tone === "danger")
             return down ? "#32141e" : (hovered ? "#391824" : "#28151d")
         return down ? "#181b28" : (hovered ? "#1d202f" : "#131620")
@@ -27,9 +36,9 @@ Button {
 
     function borderColor() {
         if (activeFocus)
-            return tone === "danger" ? "#d15b76" : "#ad3cf3"
+            return tone === "danger" ? "#d15b76" : accentBright
         if (tone === "primary")
-            return "#b94dec"
+            return accentBright
         if (tone === "danger")
             return hovered ? "#8a3b50" : "#56303d"
         return hovered ? "#454a5e" : "#303445"
@@ -73,7 +82,7 @@ Button {
                 color: !control.enabled
                     ? "#686d7e"
                     : (control.tone === "primary"
-                        ? "white"
+                        ? control.accentForeground
                         : (control.tone === "danger" ? "#e5a2b1" : "#c9ccd8"))
                 font.family: control.fontFamily
                 font.pixelSize: 10

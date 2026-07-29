@@ -17,8 +17,10 @@ Item {
     property int selectedIndex: -1
     readonly property var selectedItem: selectedIndex >= 0
         && selectedIndex < rawItems.length ? rawItems[selectedIndex] : ({})
-    readonly property color accent: "#ad3cf3"
-    readonly property color accentBright: "#d16cff"
+    property color accent: "#ad3cf3"
+    property color accentBright: "#d16cff"
+    property color accentDark: "#7113b9"
+    property color accentForeground: "#ffffff"
     readonly property color panel: "#d90b0d18"
     readonly property color border: "#2a2d3d"
     readonly property color textPrimary: "#f3f1f8"
@@ -265,6 +267,8 @@ Item {
             anchors.margins: 8
             wallpaperModel: catalogModel
             currentIndex: Math.max(0, root.selectedIndex)
+            accent: root.accent
+            accentBright: root.accentBright
             columns: width > 980 ? 5 : width > 730 ? 4 : 3
             horizontalPadding: 22
             verticalPadding: 18
@@ -372,13 +376,13 @@ Item {
             radius: 10
             anchors.verticalCenter: parent.verticalCenter
             gradient: Gradient {
-                GradientStop { position: 0; color: "#b832ed" }
-                GradientStop { position: 1; color: "#6818c5" }
+                GradientStop { position: 0; color: root.accentBright }
+                GradientStop { position: 1; color: root.accentDark }
             }
             Text {
                 anchors.centerIn: parent
                 text: root.pageNumber
-                color: "white"
+                color: root.accentForeground
                 font.family: root.uiFont
                 font.pixelSize: 11
                 font.bold: true
@@ -619,13 +623,15 @@ Item {
                 background: Rectangle {
                     radius: 11
                     gradient: Gradient {
-                        GradientStop { position: 0; color: parent.enabled ? "#bd2bea" : "#292b37" }
-                        GradientStop { position: 1; color: parent.enabled ? "#7416d1" : "#20222d" }
+                        GradientStop { position: 0; color: parent.enabled
+                            ? root.accentBright : "#292b37" }
+                        GradientStop { position: 1; color: parent.enabled
+                            ? root.accentDark : "#20222d" }
                     }
                 }
                 contentItem: Text {
                     text: kilivepaper.busy ? "Procesando..." : parent.text
-                    color: "white"
+                    color: root.accentForeground
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     font.family: root.uiFont

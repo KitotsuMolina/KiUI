@@ -8,6 +8,10 @@ Control {
     property string count: ""
     property string iconName: ""
     property bool selected: false
+    property color accent: "#ad3cf3"
+    property color accentBright: "#d16cff"
+    readonly property color accentSurface: Qt.rgba(
+        accent.r, accent.g, accent.b, 0.22)
     signal activated()
 
     implicitWidth: 20 + iconItem.width + labelText.implicitWidth
@@ -20,9 +24,11 @@ Control {
 
     background: Rectangle {
         radius: 14
-        color: root.selected ? "#331056" : root.hovered ? "#161827" : "#10121d"
+        color: root.selected ? root.accentSurface
+            : root.hovered ? "#161827" : "#10121d"
         border.width: 1
-        border.color: root.selected ? "#a93bf4" : root.activeFocus ? "#8d48bd" : "#272a39"
+        border.color: root.selected ? root.accent
+            : root.activeFocus ? root.accentBright : "#272a39"
 
         Rectangle {
             visible: root.selected
@@ -31,7 +37,7 @@ Control {
             radius: 18
             color: "transparent"
             border.width: 1
-            border.color: "#47205f"
+            border.color: root.accent
             opacity: 0.75
         }
     }
@@ -51,7 +57,7 @@ Control {
             anchors.verticalCenter: parent.verticalCenter
             name: root.iconName
             iconSize: 16
-            color: root.selected ? "#c15bff" : "#6e7488"
+            color: root.selected ? root.accentBright : "#6e7488"
         }
 
         Text {

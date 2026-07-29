@@ -10,6 +10,10 @@ Control {
     property string trailingIcon: ""
     property bool selected: false
     property bool compact: false
+    property color accent: "#ad3cf3"
+    property color accentBright: "#d16cff"
+    readonly property color accentSurface: Qt.rgba(
+        accent.r, accent.g, accent.b, 0.22)
     signal activated()
 
     implicitHeight: 40
@@ -20,9 +24,10 @@ Control {
 
     background: Rectangle {
         radius: 10
-        color: root.selected ? "#2d1251" : root.hovered ? "#151827" : "transparent"
+        color: root.selected ? root.accentSurface
+            : root.hovered ? "#151827" : "transparent"
         border.width: root.activeFocus ? 1 : 0
-        border.color: "#b653ff"
+        border.color: root.accent
     }
 
     contentItem: Row {
@@ -35,7 +40,7 @@ Control {
             height: 20
             anchors.verticalCenter: parent.verticalCenter
             name: root.displayIcon
-            color: root.selected ? "#d998ff" : "#9ba1b7"
+            color: root.selected ? root.accentBright : "#9ba1b7"
             iconSize: 18
         }
 

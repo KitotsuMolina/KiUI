@@ -11,6 +11,9 @@ ColumnLayout {
     property string customWidth: ""
     property string customHeight: ""
     property string fontFamily: "CaskaydiaCove Nerd Font Propo"
+    readonly property var themeWindow: ApplicationWindow.window
+    readonly property color accent: themeWindow && themeWindow.accent
+        ? themeWindow.accent : "#ad3cf3"
     readonly property bool customMode: selectedMode === "x:x"
 
     spacing: 9
@@ -116,7 +119,8 @@ ColumnLayout {
                     radius: 9
                     color: control.selectedMode === parent.modelData ? "#35144e" : "#10131f"
                     border.width: 1
-                    border.color: control.selectedMode === parent.modelData ? "#ad3cf3" : "#2d3142"
+                    border.color: control.selectedMode === parent.modelData
+                        ? control.accent : "#2d3142"
                 }
                 contentItem: Text {
                     text: parent.text
@@ -298,7 +302,7 @@ ColumnLayout {
                             color: control.minimumResolution === parent.modelData
                                 ? "#35144e" : (parent.hovered ? "#202333" : "#10131f")
                             border.color: control.minimumResolution === parent.modelData
-                                ? "#ad3cf3" : "#2d3142"
+                                ? control.accent : "#2d3142"
                         }
                         contentItem: Text {
                             text: parent.text

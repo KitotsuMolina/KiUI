@@ -5,6 +5,8 @@ Item {
 
     property bool active: false
     property bool topEdge: true
+    property color accent: "#ad3cf3"
+    property color accentBright: "#d16cff"
 
     height: 62
     visible: opacity > 0
@@ -24,7 +26,7 @@ Item {
         anchors.bottom: root.topEdge ? undefined : parent.bottom
         width: parent.width
         height: 1
-        color: "#d16cff"
+        color: root.accentBright
         opacity: 0.72
     }
 
@@ -36,7 +38,8 @@ Item {
         gradient: Gradient {
             GradientStop {
                 position: 0
-                color: "#4dad3cf3"
+                color: Qt.rgba(
+                    root.accent.r, root.accent.g, root.accent.b, 0.30)
             }
             GradientStop {
                 position: 0.42
@@ -65,7 +68,7 @@ Item {
             width: index % 4 === 0 ? 3 : 2
             height: width
             radius: width * 0.5
-            color: index % 3 === 0 ? "#f2c8ff" : "#bd62ff"
+            color: index % 3 === 0 ? root.accentBright : root.accent
             opacity: 0
 
             SequentialAnimation on y {

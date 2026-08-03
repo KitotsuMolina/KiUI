@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -896,7 +896,8 @@ fn update_dashboard_watches(paths: &[PathBuf]) -> Result<(), String> {
         .map_err(|_| "El observador del dashboard quedo bloqueado".to_owned())?;
     let desired = paths
         .iter()
-        .filter_map(|path| watch_target(path))
+        .map(PathBuf::as_path)
+        .filter_map(watch_target)
         .collect::<BTreeMap<_, _>>();
 
     let removed = observer
@@ -922,11 +923,11 @@ fn update_dashboard_watches(paths: &[PathBuf]) -> Result<(), String> {
     Ok(())
 }
 
-fn watch_target(path: &PathBuf) -> Option<(PathBuf, RecursiveMode)> {
+fn watch_target(path: &Path) -> Option<(PathBuf, RecursiveMode)> {
     if path.is_dir() {
-        return Some((path.clone(), RecursiveMode::Recursive));
+        return Some((path.to_path_buf(), RecursiveMode::Recursive));
     }
-    let mut candidate = path.as_path();
+    let mut candidate = path;
     while !candidate.is_dir() {
         candidate = candidate.parent()?;
     }

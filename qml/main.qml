@@ -7,6 +7,8 @@ import "components"
 ApplicationWindow {
     id: root
 
+    RuntimeBridge { id: runtimeBridge }
+
     width: 1380
     height: 860
     minimumWidth: 880
@@ -46,8 +48,10 @@ ApplicationWindow {
     property var historyEntries: []
     property bool compactSidebar: width < 1040
     property bool showDetails: width >= 1180
-    readonly property var appearanceState: parseJson(
-        kitowallBridge.appearanceJson, {})
+    readonly property bool hasKitowall: runtimeBridge.hasKitowall
+    readonly property bool hasKilivepaper: runtimeBridge.hasKilivepaper
+    readonly property var appearanceState: hasKitowall
+        ? parseJson(kitowallBridge.appearanceJson, {}) : ({})
     readonly property var appearancePalette: appearanceState.palette || ({})
     readonly property bool dynamicThemeAvailable: dynamicColorsEnabled
         && Boolean(appearanceState.active)
@@ -74,7 +78,8 @@ ApplicationWindow {
     Behavior on accentDark { ColorAnimation { duration: 260 } }
 
     onActiveViewChanged: {
-        if (activeView === "library" && !kilivepaperBridge.busy)
+        if (hasKilivepaper && activeView === "library"
+                && !kilivepaperBridge.busy)
             kilivepaperBridge.refreshLibrary()
     }
 
@@ -187,6 +192,8 @@ ApplicationWindow {
     }
 
     function loadPacks() {
+        if (!hasKitowall)
+            return
         var response = parseJson(kitowallBridge.packsJson, {})
         var packs = response.packs || {}
         var names = Object.keys(packs).sort()
@@ -211,6 +218,8 @@ ApplicationWindow {
     }
 
     function loadHistoryCount() {
+        if (!hasKitowall)
+            return
         var history = parseJson(kitowallBridge.historyJson, {})
         historyEntries = history.entries || []
         filterModel.setProperty(4, "modelCount", countText(historyEntries.length))
@@ -218,6 +227,8 @@ ApplicationWindow {
     }
 
     function loadDashboardJobs() {
+        if (!hasKitowall)
+            return
         var response = parseJson(kitowallBridge.jobsJson, {})
         var jobs = response.jobs || []
         dashboardHasActiveJobs = false
@@ -381,7 +392,7 @@ ApplicationWindow {
     }
 
     function selectPack(index) {
-        if (index < 0 || index >= packsFilterModel.count)
+        if (!hasKitowall || index < 0 || index >= packsFilterModel.count)
             return
         selectedPack = packsFilterModel.get(index).packName
         kitowallBridge.refreshDashboard(selectedPack, true)
@@ -397,6 +408,8 @@ ApplicationWindow {
     }
 
     function loadOutputs() {
+        if (!hasKitowall)
+            return
         var response = parseJson(kitowallBridge.outputsJson, {})
         var outputs = response.outputs || []
         var previous = selectedOutput
@@ -416,14 +429,41 @@ ApplicationWindow {
         selectedOutput = selected >= 0 ? outputsModel.get(selected).outputName : ""
     }
 
+    function loadLiveOutputs() {
+        if (!hasKilivepaper || hasKitowall)
+            return
+        var response = parseJson(kilivepaperBridge.statusJson, {})
+        var outputs = response.outputs || []
+        var previous = selectedOutput
+        var selected = -1
+        outputsModel.clear()
+        for (var index = 0; index < outputs.length; ++index) {
+            var entry = outputs[index]
+            var name = String(entry && entry.name !== undefined ? entry.name : entry)
+            if (name.length === 0)
+                continue
+            outputsModel.append({ "outputName": name })
+            if (name === previous)
+                selected = outputsModel.count - 1
+        }
+        if (selected < 0 && outputsModel.count > 0)
+            selected = 0
+        outputSelect.currentIndex = selected
+        selectedOutput = selected >= 0 ? outputsModel.get(selected).outputName : ""
+    }
+
     function applyToSelectedOutput() {
         if (selectedOutput.length === 0 || wallpapers.count === 0)
             return
         if (String(selected("product")) === "kilivepaper") {
+            if (!hasKilivepaper)
+                return
             kilivepaperBridge.applyItem(
                 String(selected("wallpaperId")), selectedOutput)
             return
         }
+        if (!hasKitowall)
+            return
         kitowallBridge.applyWallpaper(
             String(selected("pack")),
             String(selected("wallpaperId")),
@@ -434,6 +474,8 @@ ApplicationWindow {
         if (outputsModel.count === 0 || wallpapers.count === 0)
             return
         if (String(selected("product")) === "kilivepaper") {
+            if (!hasKilivepaper)
+                return
             var outputs = []
             for (var index = 0; index < outputsModel.count; ++index)
                 outputs.push(outputsModel.get(index).outputName)
@@ -441,18 +483,22 @@ ApplicationWindow {
                 String(selected("wallpaperId")), JSON.stringify(outputs))
             return
         }
+        if (!hasKitowall)
+            return
         kitowallBridge.applyWallpaperAll(
             String(selected("pack")),
             String(selected("wallpaperId")))
     }
 
     function rotateNow() {
-        if (kitowallBridge.busy)
+        if (!hasKitowall || kitowallBridge.busy)
             return
         kitowallBridge.rotateNow(selectedPack)
     }
 
     function loadCatalog() {
+        if (!hasKitowall)
+            return
         var catalog = parseJson(kitowallBridge.catalogJson, {})
         kitowallCatalogSummary = catalog
         kitowallCatalogItems = catalog.items || []
@@ -500,6 +546,8 @@ ApplicationWindow {
     }
 
     function loadLiveLibrary() {
+        if (!hasKilivepaper)
+            return
         var response = parseJson(kilivepaperBridge.libraryJson, {})
         var items = response.items || []
         var normalized = []
@@ -510,12 +558,16 @@ ApplicationWindow {
     }
 
     function mergeCatalogs() {
-        catalogItems = kitowallCatalogItems.concat(liveLibraryItems)
+        var staticItems = hasKitowall ? kitowallCatalogItems : []
+        var liveItems = hasKilivepaper ? liveLibraryItems : []
+        catalogItems = staticItems.concat(liveItems)
         updateCatalogCounts()
         rebuildWallpapers()
     }
 
     function loadRuntimeSettings() {
+        if (!hasKitowall)
+            return
         var settings = parseJson(kitowallBridge.settingsJson, {})
         rotationEnabled = settings.mode === "rotate"
         rotationIntervalSeconds = Number(
@@ -526,20 +578,22 @@ ApplicationWindow {
     }
 
     function loadAppearancePolicy() {
+        if (!hasKitowall)
+            return
         var policy = parseJson(kitowallBridge.appearancePolicyJson, {})
         dynamicColorsEnabled = Boolean(policy.enabled)
         dynamicColorsOutput = String(policy.source_output || "")
     }
 
     function toggleDynamicColors() {
-        if (kitowallBridge.busy)
+        if (!hasKitowall || kitowallBridge.busy)
             return
         kitowallBridge.setAppearancePolicyEnabled(
             !dynamicColorsEnabled, selectedOutput)
     }
 
     function toggleRotation() {
-        if (!kitowallBridge.busy)
+        if (hasKitowall && !kitowallBridge.busy)
             kitowallBridge.setRotationEnabled(!rotationEnabled)
     }
 
@@ -554,7 +608,7 @@ ApplicationWindow {
     }
 
     function cycleRotationInterval() {
-        if (kitowallBridge.busy)
+        if (!hasKitowall || kitowallBridge.busy)
             return
         var intervals = [300, 900, 1800, 3600]
         var current = intervals.indexOf(rotationIntervalSeconds)
@@ -563,7 +617,7 @@ ApplicationWindow {
     }
 
     function cycleTransitionType() {
-        if (kitowallBridge.busy)
+        if (!hasKitowall || kitowallBridge.busy)
             return
         var current = transitionTypes.indexOf(transitionType)
         var next = transitionTypes[(current + 1) % transitionTypes.length]
@@ -577,7 +631,7 @@ ApplicationWindow {
     }
 
     function cycleTransitionDuration() {
-        if (kitowallBridge.busy)
+        if (!hasKitowall || kitowallBridge.busy)
             return
         var durations = [1, 2, 3, 4, 5]
         var current = durations.indexOf(transitionDuration)
@@ -590,13 +644,13 @@ ApplicationWindow {
         if (favoriteKey.length === 0)
             return
         if (String(selected("product")) === "kilivepaper") {
-            if (!kilivepaperBridge.busy)
+            if (hasKilivepaper && !kilivepaperBridge.busy)
                 kilivepaperBridge.setFavorite(
                     String(selected("wallpaperId")),
                     !Boolean(selected("favorite")))
             return
         }
-        if (kitowallBridge.busy)
+        if (!hasKitowall || kitowallBridge.busy)
             return
         kitowallBridge.setFavorite(
             favoriteKey,
@@ -639,6 +693,7 @@ ApplicationWindow {
     KilivepaperBridge {
         id: kilivepaperBridge
         onLibraryJsonChanged: root.loadLiveLibrary()
+        onStatusJsonChanged: root.loadLiveOutputs()
         onLastMessageChanged: {
             if (lastMessage.length > 0) {
                 root.applyMessage = lastMessage
@@ -741,24 +796,14 @@ ApplicationWindow {
                 width: parent.width
                 spacing: 11
 
-                Rectangle {
-                    width: 38
-                    height: 38
-                    radius: 12
+                Image {
+                    width: 42
+                    height: 42
                     anchors.verticalCenter: parent.verticalCenter
-                    gradient: Gradient {
-                        GradientStop { position: 0; color: root.accentBright }
-                        GradientStop { position: 1; color: root.accentDark }
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Ki"
-                        color: root.accentForeground
-                        font.family: root.uiFont
-                        font.pixelSize: 14
-                        font.bold: true
-                    }
+                    source: "assets/kiui-logo.png"
+                    fillMode: Image.PreserveAspectFit
+                    mipmap: true
+                    smooth: true
                 }
 
                 Text {
@@ -791,6 +836,12 @@ ApplicationWindow {
                     required property string label
                     required property string count
                     required property string iconName
+                    readonly property bool moduleVisible: index === 0
+                        || (index >= 1 && index <= 4 && root.hasKitowall)
+                        || (index >= 5 && index <= 6 && root.hasKilivepaper)
+                    visible: moduleVisible
+                    height: moduleVisible ? implicitHeight : 0
+                    enabled: moduleVisible
                     width: parent.width
                     displayLabel: label
                     displayCount: count
@@ -960,7 +1011,7 @@ ApplicationWindow {
             Item { width: 1; height: 10 }
 
             Text {
-                visible: !root.compactSidebar
+                visible: root.hasKilivepaper && !root.compactSidebar
                 text: "LIVE WALLPAPERS"
                 color: "#63697e"
                 font.family: root.uiFont
@@ -970,6 +1021,8 @@ ApplicationWindow {
             }
 
             NavItem {
+                visible: root.hasKilivepaper
+                height: visible ? implicitHeight : 0
                 width: parent.width
                 displayLabel: "Descargas live"
                 displayIcon: "cloud_download"
@@ -978,6 +1031,8 @@ ApplicationWindow {
                 accentBright: root.accentBright
                 selected: root.activeView === "liveDownloads"
                 onActivated: {
+                    if (!root.hasKilivepaper)
+                        return
                     root.activeView = "liveDownloads"
                     root.colorFiltersExpanded = false
                     root.resolutionFiltersExpanded = false
@@ -1429,6 +1484,12 @@ ApplicationWindow {
                             required property string modelLabel
                             required property string modelCount
                             required property string modelIcon
+                            readonly property bool moduleVisible:
+                                (index !== 1 || root.hasKitowall)
+                                && (index !== 2 || root.hasKilivepaper)
+                            visible: moduleVisible
+                            width: moduleVisible ? implicitWidth : 0
+                            enabled: moduleVisible
                             label: modelLabel
                             count: modelCount
                             iconName: modelIcon
@@ -1447,7 +1508,8 @@ ApplicationWindow {
 
             ComboBox {
                 id: packSelect
-                width: 174
+                visible: root.hasKitowall
+                width: visible ? 174 : 0
                 height: 40
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
@@ -1543,7 +1605,7 @@ ApplicationWindow {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: filters.bottom
-            anchors.bottom: rotationDock.top
+            anchors.bottom: root.hasKitowall ? rotationDock.top : footer.top
             anchors.topMargin: 18
             anchors.bottomMargin: 14
             wallpaperModel: wallpapers
@@ -1600,6 +1662,7 @@ ApplicationWindow {
 
         Rectangle {
             id: rotationDock
+            visible: root.hasKitowall
             width: Math.min(815, parent.width - 24)
             height: 74
             radius: 20
@@ -1939,7 +2002,8 @@ ApplicationWindow {
 
     LiveDownloadsPage {
         id: liveDownloadsView
-        visible: root.activeView === "liveDownloads"
+        visible: root.hasKilivepaper && root.activeView === "liveDownloads"
+        enabled: visible
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.top: parent.top
@@ -1955,7 +2019,7 @@ ApplicationWindow {
         accentDark: root.accentDark
         accentForeground: root.accentForeground
         onLibraryChanged: {
-            if (!kilivepaperBridge.busy)
+            if (root.hasKilivepaper && !kilivepaperBridge.busy)
                 kilivepaperBridge.refreshLibrary()
         }
     }
@@ -1975,8 +2039,8 @@ ApplicationWindow {
         active: visible
         source: "SettingsPage.qml"
         onLoaded: {
-            item.kitowall = kitowallBridge
-            item.kilivepaper = kilivepaperBridge
+            item.kitowall = root.hasKitowall ? kitowallBridge : null
+            item.kilivepaper = root.hasKilivepaper ? kilivepaperBridge : null
             item.accent = Qt.binding(function() { return root.accent })
             item.accentBright = Qt.binding(function() { return root.accentBright })
             item.accentDark = Qt.binding(function() { return root.accentDark })
@@ -2028,21 +2092,21 @@ ApplicationWindow {
     Timer {
         interval: root.dashboardHasActiveJobs ? 750 : 1200
         repeat: true
-        running: true
+        running: root.hasKitowall
         onTriggered: kitowallBridge.refreshDashboard(root.selectedPack, false)
     }
 
     Timer {
         interval: 30000
         repeat: true
-        running: true
+        running: root.hasKitowall
         onTriggered: kitowallBridge.refreshDashboard(root.selectedPack, true)
     }
 
     Timer {
         interval: 5000
         repeat: true
-        running: root.activeView === "library"
+        running: root.hasKilivepaper && root.activeView === "library"
         onTriggered: {
             if (!kilivepaperBridge.busy)
                 kilivepaperBridge.refreshLibrary()
@@ -2055,12 +2119,18 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
-        kitowallBridge.refresh()
-        kitowallBridge.refreshOutputs()
-        kitowallBridge.refreshAppearancePolicy()
-        kitowallBridge.refreshAppearance()
-        kitowallBridge.refreshDashboard("", true)
-        kilivepaperBridge.refreshLibrary()
+        if (hasKitowall) {
+            kitowallBridge.refresh()
+            kitowallBridge.refreshOutputs()
+            kitowallBridge.refreshAppearancePolicy()
+            kitowallBridge.refreshAppearance()
+            kitowallBridge.refreshDashboard("", true)
+        }
+        if (hasKilivepaper) {
+            kilivepaperBridge.refreshLibrary()
+            if (!hasKitowall)
+                kilivepaperBridge.refreshStatus()
+        }
         hexGrid.forceActiveFocus()
     }
 }

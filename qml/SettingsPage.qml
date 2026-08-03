@@ -11,6 +11,8 @@ Rectangle {
 
     property var kitowall: null
     property var kilivepaper: null
+    readonly property bool hasKitowall: kitowall !== null
+    readonly property bool hasKilivepaper: kilivepaper !== null
     color: "transparent"
     property int activeSection: 0
     property string selectedPackName: ""
@@ -89,6 +91,8 @@ Rectangle {
     }
 
     function loadSettings() {
+        if (!kitowall)
+            return
         var settings = parseJson(kitowall.settingsJson, {})
         if (!settings || Object.keys(settings).length === 0)
             return
@@ -114,6 +118,8 @@ Rectangle {
     }
 
     function loadPacks() {
+        if (!kitowall)
+            return
         var response = parseJson(kitowall.packsJson, {})
         var packs = value(response, "packs", {})
         sharedProviderCredentials = value(response, "providerCredentials", {})
@@ -245,6 +251,8 @@ Rectangle {
     }
 
     function loadJobs() {
+        if (!kitowall)
+            return
         var response = parseJson(kitowall.jobsJson, {})
         var jobs = value(response, "jobs", [])
         jobs.sort(function(left, right) {
@@ -318,6 +326,8 @@ Rectangle {
     }
 
     function loadServices() {
+        if (!kitowall)
+            return
         var response = parseJson(kitowall.servicesJson, {})
         var summary = value(response, "summary", {})
         var automations = value(response, "automations", [])
@@ -347,6 +357,17 @@ Rectangle {
             })
         }
     }
+
+    function ensureValidSection() {
+        if (hasKitowall && activeSection >= 0 && activeSection <= 2)
+            return
+        if (hasKilivepaper && activeSection >= 3 && activeSection <= 4)
+            return
+        activeSection = hasKitowall ? 0 : 3
+    }
+
+    onHasKitowallChanged: ensureValidSection()
+    onHasKilivepaperChanged: ensureValidSection()
 
     function hasActiveJobs() {
         for (var index = 0; index < jobsModel.count; ++index) {
@@ -650,6 +671,7 @@ Rectangle {
                 }
 
                 Text {
+                    visible: page.hasKitowall
                     text: "KITOWALL"
                     color: "#646a7f"
                     font.family: page.uiFont
@@ -660,11 +682,11 @@ Rectangle {
                 }
 
                 Repeater {
-                    model: [
+                    model: page.hasKitowall ? [
                         {"label": "General", "icon": "tune", "section": 0},
                         {"label": "Packs", "icon": "folder", "section": 1},
                         {"label": "Status", "icon": "monitor_heart", "section": 2}
-                    ]
+                    ] : []
 
                     delegate: Button {
                         id: sectionButton
@@ -733,6 +755,7 @@ Rectangle {
                 }
 
                 Text {
+                    visible: page.hasKilivepaper
                     Layout.topMargin: 14
                     text: "KILIVEPAPER"
                     color: "#646a7f"
@@ -744,10 +767,10 @@ Rectangle {
                 }
 
                 Repeater {
-                    model: [
+                    model: page.hasKilivepaper ? [
                         {"label": "General", "icon": "movie", "section": 3},
                         {"label": "Status", "icon": "play_circle", "section": 4}
-                    ]
+                    ] : []
 
                     delegate: Button {
                         id: liveSectionButton
@@ -900,7 +923,7 @@ Rectangle {
                     text: page.serviceInstalled < page.serviceTotal
                         ? "Instalar servicios"
                         : "Reparar servicios"
-                    enabled: !kitowall.busy
+                    enabled: kitowall && !kitowall.busy
                     onClicked: repairServicesDialog.open()
                     background: Rectangle {
                         radius: 10
@@ -1006,7 +1029,7 @@ Rectangle {
                     Layout.preferredWidth: 190
                     Layout.preferredHeight: 44
                     text: "Guardar configuracion"
-                    enabled: !kitowall.busy
+                    enabled: kitowall && !kitowall.busy
                     onClicked: kitowall.saveGeneral(JSON.stringify({
                         "mode": modeSelect.currentText,
                         "interval": Number(intervalField.text),
@@ -1251,7 +1274,7 @@ Rectangle {
                             iconName: "refresh"
                             Layout.preferredWidth: 138
                             Layout.preferredHeight: 36
-                            enabled: !kitowall.busy && !page.hasActiveJobs()
+                            enabled: kitowall && !kitowall.busy && !page.hasActiveJobs()
                             onClicked: kitowall.startPackJob("refresh", page.selectedPackName, 1)
                         }
                         KiActionButton {
@@ -1260,7 +1283,7 @@ Rectangle {
                             iconName: "download"
                             Layout.preferredWidth: 104
                             Layout.preferredHeight: 36
-                            enabled: !kitowall.busy && !page.hasActiveJobs()
+                            enabled: kitowall && !kitowall.busy && !page.hasActiveJobs()
                             onClicked: kitowall.startPackJob(
                                 "hydrate", page.selectedPackName, hydrateCount.value)
                         }
@@ -1415,7 +1438,7 @@ Rectangle {
                         Item { Layout.fillWidth: true }
                         Button {
                             text: page.selectedPackName.length > 0 ? "Guardar cambios" : "Crear pack"
-                            enabled: !kitowall.busy
+                            enabled: kitowall && !kitowall.busy
                             onClicked: kitowall.savePack(page.activeProvider, packNameField.text, JSON.stringify(page.packPayload()))
                             Layout.preferredWidth: 160
                             Layout.preferredHeight: 42
@@ -1666,7 +1689,7 @@ Rectangle {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: kitowall.busy
+                                text: kitowall && kitowall.busy
                                     ? "Consultando servicios..."
                                     : "No se recibio informacion de servicios."
                                 color: page.textSecondary
@@ -2241,7 +2264,10 @@ Rectangle {
             ? "Reparar servicios de Kitowall"
             : "Instalar servicios de Kitowall"
         modal: true
-        onAccepted: kitowall.repairServices()
+        onAccepted: {
+            if (kitowall)
+                kitowall.repairServices()
+        }
 
         contentItem: ColumnLayout {
             width: 450
@@ -2304,7 +2330,10 @@ Rectangle {
         width: Math.min(420, page.width - 80)
         title: "Eliminar pack"
         modal: true
-        onAccepted: kitowall.removePack(page.selectedPackName)
+        onAccepted: {
+            if (kitowall)
+                kitowall.removePack(page.selectedPackName)
+        }
 
         contentItem: ColumnLayout {
             width: 360
@@ -2343,6 +2372,7 @@ Rectangle {
     }
 
     Component.onCompleted: {
+        ensureValidSection()
         clearEditor("wallhaven")
     }
 

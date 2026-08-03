@@ -34,6 +34,13 @@ controla RenderCore y no instala dependencias.
 
 La decision esta registrada en `docs/ADR-005-STACK_KIUI.md`.
 
+## Identidad e instalacion grafica
+
+El ID freedesktop y Wayland es `dev.kitotsu.kiui`. Debe coincidir entre Qt, la
+plantilla `packaging/linux/dev.kitotsu.kiui.desktop.in` y el nombre de los iconos.
+El release distribuye la plantilla; GekkoApp resuelve la ruta absoluta del
+entrypoint y materializa el `.desktop` bajo `XDG_DATA_HOME`.
+
 Las licencias de dependencias visuales distribuidas con KiUI se encuentran en
 `THIRD_PARTY_LICENSES/`.
 
@@ -61,8 +68,14 @@ cargo run -- --lc
 desde los directorios `target/debug` o `target/release` de los proyectos hermanos.
 `--lc` permite hacerlo explicito o forzarlo en un build release. Kitsune y
 Kilivepaper se incorporaran automaticamente cuando existan sus binarios locales.
-Un build release sin la flag conserva los nombres resolubles mediante `PATH`; la
-integracion con las rutas instaladas por Gekko App queda aplazada.
+Un build release sin la flag detecta los modulos instalados mediante `PATH` o las
+variables `KIUI_KITOWALL_BIN`, `KIUI_KILIVEPAPER_BIN` y `KIUI_KITSUNE_BIN`.
+Kitsune Compositor es infraestructura obligatoria y se puede resolver mediante
+`KIUI_COMPOSITOR_BIN`.
+
+KiUI solo muestra las fuentes, filtros, descargas y secciones de configuracion de
+los modulos detectados. Para probar cada composicion en modo local se puede iniciar
+con `KIUI_DISABLE_KITOWALL=1` o `KIUI_DISABLE_KILIVEPAPER=1`.
 
 En una sesion Wayland, el modo local usa por defecto el backend software de Qt
 Quick para evitar fallos EGL durante el desarrollo. Se puede probar otro backend

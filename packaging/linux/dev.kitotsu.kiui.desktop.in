@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=KiUI
+GenericName=Wallpaper manager
+GenericName[es]=Gestor de fondos de pantalla
+Comment=Manage static wallpapers, live wallpapers, and Kitsune modules
+Comment[es]=Administra fondos estaticos, fondos live y modulos Kitsune
+Exec=@EXECUTABLE@
+TryExec=@EXECUTABLE@
+Icon=@APPLICATION_ID@
+Terminal=false
+StartupNotify=true
+Categories=Settings;Qt;
+Keywords=wallpaper;live wallpaper;kitowall;kitsune;
+Keywords[es]=fondo de pantalla;fondo animado;kitowall;kitsune;

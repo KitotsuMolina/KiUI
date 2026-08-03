@@ -20,7 +20,11 @@ fn main() {
     )
     .file("src/kitowall_bridge.rs")
     .file("src/kilivepaper_bridge.rs")
-    .qrc_resources(["qml/assets/MaterialSymbolsRounded-KiUI.ttf"])
+    .file("src/runtime_bridge.rs")
+    .qrc_resources([
+        "qml/assets/MaterialSymbolsRounded-KiUI.ttf",
+        "qml/assets/kiui-logo.png",
+    ])
     .qt_module("Network")
     .qt_module("QuickControls2")
     .build();

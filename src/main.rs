@@ -3,11 +3,16 @@ mod contracts;
 mod kilivepaper_bridge;
 mod kitowall_bridge;
 mod runtime;
+mod runtime_bridge;
 
 use cxx_qt::casting::Upcast;
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QQmlEngine, QUrl};
+use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QQmlEngine, QString, QUrl};
 use std::env;
 use std::pin::Pin;
+
+const APPLICATION_ID: &str = "dev.kitotsu.kiui";
+const APPLICATION_NAME: &str = "kiui";
+const APPLICATION_DISPLAY_NAME: &str = "KiUI";
 
 fn main() {
     let runtime = match runtime::RuntimeContext::from_process() {
@@ -21,7 +26,12 @@ fn main() {
     if runtime.mode == runtime::RuntimeMode::Local {
         eprintln!(
             "kiui:mode:local kitowall={} kilivepaper={} compositor={}",
-            runtime.clis.kitowall.display(),
+            runtime
+                .clis
+                .kitowall
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "<missing>".into()),
             runtime
                 .clis
                 .kilivepaper
@@ -31,14 +41,24 @@ fn main() {
             runtime.clis.compositor.display()
         );
     }
-    if let Err(error) = kitowall_bridge::configure(
-        runtime.clis.kitowall.clone(),
-        runtime.clis.kilivepaper.clone(),
-        runtime.clis.compositor.clone(),
-        runtime.mode == runtime::RuntimeMode::Local,
+    if let Err(error) = runtime_bridge::configure(
+        runtime.clis.kitowall.is_some(),
+        runtime.clis.kilivepaper.is_some(),
+        runtime.clis.kitsune.is_some(),
     ) {
         eprintln!("kiui:error:{error}");
         return;
+    }
+    if let Some(binary) = runtime.clis.kitowall.clone() {
+        if let Err(error) = kitowall_bridge::configure(
+            binary,
+            runtime.clis.kilivepaper.clone(),
+            runtime.clis.compositor.clone(),
+            runtime.mode == runtime::RuntimeMode::Local,
+        ) {
+            eprintln!("kiui:error:{error}");
+            return;
+        }
     }
     if let Some(binary) = runtime.clis.kilivepaper.clone() {
         if let Err(error) = kilivepaper_bridge::configure(binary, runtime.clis.compositor.clone()) {
@@ -48,6 +68,10 @@ fn main() {
     }
 
     let mut app = QGuiApplication::new();
+    QGuiApplication::set_desktop_file_name(&QString::from(APPLICATION_ID));
+    if let Some(app) = app.as_mut() {
+        configure_application_identity(app);
+    }
     cxx_qt::init_qml_module!("dev.kitotsu.kiui");
     let mut engine = QQmlApplicationEngine::new();
 
@@ -70,6 +94,19 @@ fn main() {
     if let Some(app) = app.as_mut() {
         app.exec();
     }
+}
+
+fn configure_application_identity(mut app: Pin<&mut QGuiApplication>) {
+    app.as_mut()
+        .set_application_name(&QString::from(APPLICATION_NAME));
+    app.as_mut()
+        .set_application_display_name(&QString::from(APPLICATION_DISPLAY_NAME));
+    app.as_mut()
+        .set_application_version(&QString::from(env!("CARGO_PKG_VERSION")));
+    app.as_mut()
+        .set_organization_name(&QString::from("Kitotsu"));
+    app.as_mut()
+        .set_organization_domain(&QString::from("kitotsu.dev"));
 }
 
 fn configure_graphics_backend(mode: runtime::RuntimeMode) {
@@ -115,5 +152,12 @@ mod tests {
             true,
             false
         ));
+    }
+
+    #[test]
+    fn desktop_identity_matches_the_packaged_entry() {
+        assert_eq!(APPLICATION_ID, "dev.kitotsu.kiui");
+        assert_eq!(APPLICATION_NAME, "kiui");
+        assert_eq!(APPLICATION_DISPLAY_NAME, "KiUI");
     }
 }

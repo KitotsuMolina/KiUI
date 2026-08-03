@@ -50,7 +50,7 @@ Requisitos:
 
 ```text
 Rust estable
-Qt >= 6.10
+Qt >= 6.4
 Qt Quick Controls 2
 compilador C++
 ```

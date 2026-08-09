@@ -411,13 +411,22 @@ impl ffi::KitowallBridge {
         enabled: bool,
         output: &QString,
     ) {
+        if *self.busy() {
+            return;
+        }
         self.as_mut().set_busy(true);
         self.as_mut().set_last_error(QString::default());
         let output = output.to_string();
-        let result = if enabled {
-            if output.trim().is_empty() {
-                Err("Selecciona un monitor antes de activar los colores dinamicos".into())
-            } else {
+        if enabled && output.trim().is_empty() {
+            self.as_mut().set_last_error(QString::from(
+                "Selecciona un monitor antes de activar los colores dinamicos",
+            ));
+            self.as_mut().set_busy(false);
+            return;
+        }
+        let qt_thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let result = if enabled {
                 invoke_compositor(&[
                     "appearance",
                     "policy",
@@ -426,29 +435,31 @@ impl ffi::KitowallBridge {
                     &output,
                     "--confirm",
                 ])
+            } else {
+                invoke_compositor(&["appearance", "policy", "disable"])
             }
-        } else {
-            invoke_compositor(&["appearance", "policy", "disable"])
-        }
-        .and_then(|_| invoke_compositor(&["appearance", "policy", "show"]));
-
-        match result {
-            Ok(policy) => match serde_json::to_string(&policy).map_err(|error| error.to_string()) {
-                Ok(policy) => {
-                    self.as_mut()
-                        .set_appearance_policy_json(QString::from(&policy));
-                    let message = if enabled {
-                        format!("Colores dinamicos activados para {output}")
-                    } else {
-                        "Colores dinamicos desactivados".into()
-                    };
-                    self.as_mut().set_last_message(QString::from(&message));
-                }
-                Err(error) => self.as_mut().set_last_error(QString::from(&error)),
-            },
-            Err(error) => self.as_mut().set_last_error(QString::from(&error)),
-        }
-        self.as_mut().set_busy(false);
+            .and_then(|_| invoke_compositor(&["appearance", "policy", "show"]))
+            .and_then(|policy| serde_json::to_string(&policy).map_err(|error| error.to_string()));
+            qt_thread
+                .queue(move |mut bridge| {
+                    match result {
+                        Ok(policy) => {
+                            bridge
+                                .as_mut()
+                                .set_appearance_policy_json(QString::from(&policy));
+                            let message = if enabled {
+                                format!("Colores dinamicos activados para {output}")
+                            } else {
+                                "Colores dinamicos desactivados".into()
+                            };
+                            bridge.as_mut().set_last_message(QString::from(&message));
+                        }
+                        Err(error) => bridge.as_mut().set_last_error(QString::from(&error)),
+                    }
+                    bridge.as_mut().set_busy(false);
+                })
+                .ok();
+        });
     }
 
     fn repair_services(mut self: core::pin::Pin<&mut Self>) {
@@ -1297,6 +1308,7 @@ fn invoke_owned(mut args: Vec<String>) -> Result<Value, String> {
     }
     args.push("--contract-v1".into());
     let output = Command::new(&runtime.binary)
+        .env("KITSUNE_COMPOSITOR_BIN", &runtime.compositor)
         .args(&args)
         .output()
         .map_err(|error| format!("No se pudo ejecutar Kitowall: {error}"))?;

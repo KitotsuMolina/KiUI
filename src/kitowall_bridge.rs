@@ -427,14 +427,18 @@ impl ffi::KitowallBridge {
         let qt_thread = self.qt_thread();
         std::thread::spawn(move || {
             let result = if enabled {
-                invoke_compositor(&[
-                    "appearance",
-                    "policy",
-                    "enable",
-                    "--output",
-                    &output,
-                    "--confirm",
-                ])
+                invoke_compositor(&["appearance", "capabilities"])
+                    .and_then(reject_blocking_appearance_advisory)
+                    .and_then(|_| {
+                        invoke_compositor(&[
+                            "appearance",
+                            "policy",
+                            "enable",
+                            "--output",
+                            &output,
+                            "--confirm",
+                        ])
+                    })
             } else {
                 invoke_compositor(&["appearance", "policy", "disable"])
             }
@@ -804,6 +808,32 @@ impl ffi::KitowallBridge {
             Err(error) => self.as_mut().set_last_error(QString::from(&error)),
         }
         self.as_mut().set_busy(false);
+    }
+}
+
+fn reject_blocking_appearance_advisory(capabilities: Value) -> Result<Value, String> {
+    let advisory = capabilities
+        .get("advisories")
+        .and_then(Value::as_array)
+        .and_then(|advisories| {
+            advisories.iter().find(|advisory| {
+                advisory.get("severity").and_then(Value::as_str) == Some("blocking")
+            })
+        });
+    match advisory {
+        Some(advisory) => {
+            let message = advisory
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("La integracion de apariencia requiere un ajuste manual");
+            let suggested = advisory
+                .get("suggested_json")
+                .and_then(Value::as_str)
+                .map(|json| format!(" Configuracion sugerida: {json}"))
+                .unwrap_or_default();
+            Err(format!("{message}{suggested}"))
+        }
+        None => Ok(capabilities),
     }
 }
 
@@ -1406,6 +1436,29 @@ mod tests {
             Some("one,two".into())
         );
         assert_eq!(option_text(&serde_json::json!("  ")), None);
+    }
+
+    #[test]
+    fn blocks_a_risky_caelestia_integration_with_actionable_information() {
+        let error = reject_blocking_appearance_advisory(serde_json::json!({
+            "advisories": [{
+                "severity": "blocking",
+                "message": "Edita ~/.config/caelestia/cli.json",
+                "suggested_json": "{\"theme\":{\"enableChromium\":false}}"
+            }]
+        }))
+        .unwrap_err();
+        assert!(error.contains("cli.json"));
+        assert!(error.contains("enableChromium"));
+    }
+
+    #[test]
+    fn accepts_appearance_without_blocking_advisories() {
+        let capabilities = serde_json::json!({"advisories": []});
+        assert_eq!(
+            reject_blocking_appearance_advisory(capabilities.clone()).unwrap(),
+            capabilities
+        );
     }
 
     #[test]

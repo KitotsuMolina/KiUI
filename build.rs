@@ -1,5 +1,4 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
-use qt_build_utils::{QResource, QResourceFile, QResources};
 
 fn main() {
     CxxQtBuilder::new_qml_module(
@@ -27,16 +26,9 @@ fn main() {
     .file("src/runtime_bridge.rs")
     .qrc_resources([
         "qml/assets/MaterialSymbolsRounded-KiUI.ttf",
+        "qml/assets/PixelifySans-Bold.ttf",
         "qml/assets/kiui-logo.png",
     ])
-    .qrc_resources(
-        QResources::new().resource(
-            QResource::new().file(
-                QResourceFile::new("../kisddm/runtime-theme/font/PixelifySans-Bold.ttf")
-                    .alias("qml/assets/PixelifySans-Bold.ttf"),
-            ),
-        ),
-    )
     .qt_module("Network")
     .qt_module("QuickControls2")
     .build();

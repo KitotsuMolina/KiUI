@@ -99,10 +99,7 @@ fn main() {
         engine
             .as_mut()
             .on_object_creation_failed(|_, url| {
-                eprintln!(
-                    "kiui:error:qml-object-creation-failed url={}",
-                    url.to_string().to_string()
-                );
+                eprintln!("kiui:error:qml-object-creation-failed url={}", url);
             })
             .release();
         let mut qml_engine: Pin<&mut QQmlEngine> = engine.as_mut().upcast_pin();

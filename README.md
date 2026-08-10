@@ -17,6 +17,7 @@ KiUI consume exclusivamente:
 ```text
 kitowall --contract-v1
 kilivepaper --contract-v1
+kisddm --contract-v1
 kitsune --contract-v1
 ```
 

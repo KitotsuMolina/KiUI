@@ -356,6 +356,7 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "notify",
+ "qt-build-utils",
  "serde",
  "serde_json",
 ]

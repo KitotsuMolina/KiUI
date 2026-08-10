@@ -15,6 +15,7 @@ notify = "8"
 
 [build-dependencies]
 cxx-qt-build = "0.9"
+qt-build-utils = "0.9"
 
 [profile.release]
 lto = "thin"

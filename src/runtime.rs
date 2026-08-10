@@ -13,6 +13,7 @@ pub struct CliPaths {
     pub compositor: PathBuf,
     pub kitsune: Option<PathBuf>,
     pub kilivepaper: Option<PathBuf>,
+    pub kisddm: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +46,11 @@ impl RuntimeContext {
                         "KIUI_KILIVEPAPER_BIN",
                         "kilivepaper",
                     ),
+                    kisddm: optional_installed_binary(
+                        "KIUI_DISABLE_KISDDM",
+                        "KIUI_KISDDM_BIN",
+                        "kisddm",
+                    ),
                 },
             });
         }
@@ -72,6 +78,9 @@ impl RuntimeContext {
                 kitsune: local_binary(&root, "kitsune", "kitsune", &preferred),
                 kilivepaper: (!module_disabled("KIUI_DISABLE_KILIVEPAPER"))
                     .then(|| local_kilivepaper_binary(&root, &preferred))
+                    .flatten(),
+                kisddm: (!module_disabled("KIUI_DISABLE_KISDDM"))
+                    .then(|| local_binary(&root, "kisddm", "kisddm", &preferred))
                     .flatten(),
             },
         })
@@ -126,7 +135,11 @@ fn local_binary(root: &Path, project: &str, binary: &str, preferred: &str) -> Op
 }
 
 fn local_kilivepaper_binary(root: &Path, preferred: &str) -> Option<PathBuf> {
-    local_binary(root, "kilivepaper", "kilivepaper", preferred)
+    let portable = root.join("kilivepaper/target/x86_64-unknown-linux-gnu/release/kilivepaper");
+    portable
+        .is_file()
+        .then_some(portable)
+        .or_else(|| local_binary(root, "kilivepaper", "kilivepaper", preferred))
 }
 
 fn find_refactor_root(start: &Path) -> Option<PathBuf> {
@@ -196,6 +209,34 @@ mod tests {
             local_binary(&root, "compositor", "kitsune-compositor", "debug"),
             Some(compositor)
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn finds_the_local_kisddm_binary_used_by_lc_mode() {
+        let root = fixture();
+        let kisddm = root.join("kisddm/target/debug/kisddm");
+        fs::create_dir_all(kisddm.parent().unwrap()).unwrap();
+        fs::write(&kisddm, "").unwrap();
+
+        assert_eq!(
+            local_binary(&root, "kisddm", "kisddm", "debug"),
+            Some(kisddm)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn prefers_the_portable_kilivepaper_binary_in_lc_mode() {
+        let root = fixture();
+        let dynamic = root.join("kilivepaper/target/debug/kilivepaper");
+        let portable = root.join("kilivepaper/target/x86_64-unknown-linux-gnu/release/kilivepaper");
+        fs::create_dir_all(dynamic.parent().unwrap()).unwrap();
+        fs::create_dir_all(portable.parent().unwrap()).unwrap();
+        fs::write(&dynamic, "").unwrap();
+        fs::write(&portable, "").unwrap();
+
+        assert_eq!(local_kilivepaper_binary(&root, "debug"), Some(portable));
         fs::remove_dir_all(root).unwrap();
     }
 }

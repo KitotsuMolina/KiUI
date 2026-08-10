@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 mod contracts;
 mod kilivepaper_bridge;
+mod kisddm_bridge;
 mod kitowall_bridge;
 mod runtime;
 mod runtime_bridge;
@@ -25,7 +26,7 @@ fn main() {
     configure_graphics_backend(runtime.mode);
     if runtime.mode == runtime::RuntimeMode::Local {
         eprintln!(
-            "kiui:mode:local kitowall={} kilivepaper={} compositor={}",
+            "kiui:mode:local kitowall={} kilivepaper={} kisddm={} compositor={}",
             runtime
                 .clis
                 .kitowall
@@ -38,6 +39,12 @@ fn main() {
                 .as_ref()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|| "<missing>".into()),
+            runtime
+                .clis
+                .kisddm
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "<missing>".into()),
             runtime.clis.compositor.display()
         );
     }
@@ -45,6 +52,7 @@ fn main() {
         runtime.clis.kitowall.is_some(),
         runtime.clis.kilivepaper.is_some(),
         runtime.clis.kitsune.is_some(),
+        runtime.clis.kisddm.is_some(),
     ) {
         eprintln!("kiui:error:{error}");
         return;
@@ -66,6 +74,17 @@ fn main() {
             return;
         }
     }
+    if let Some(binary) = runtime.clis.kisddm.clone() {
+        if let Err(error) = kisddm_bridge::configure(
+            binary,
+            runtime.clis.compositor.clone(),
+            runtime.clis.kitowall.clone(),
+            runtime.clis.kilivepaper.clone(),
+        ) {
+            eprintln!("kiui:error:{error}");
+            return;
+        }
+    }
 
     let mut app = QGuiApplication::new();
     QGuiApplication::set_desktop_file_name(&QString::from(APPLICATION_ID));
@@ -79,8 +98,11 @@ fn main() {
         let mut engine = engine;
         engine
             .as_mut()
-            .on_object_creation_failed(|_, _| {
-                eprintln!("kiui:error:qml-object-creation-failed");
+            .on_object_creation_failed(|_, url| {
+                eprintln!(
+                    "kiui:error:qml-object-creation-failed url={}",
+                    url.to_string().to_string()
+                );
             })
             .release();
         let mut qml_engine: Pin<&mut QQmlEngine> = engine.as_mut().upcast_pin();

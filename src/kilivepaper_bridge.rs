@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use cxx_qt::Threading;
+use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use serde::Deserialize;
 use serde_json::Value;
@@ -32,6 +32,16 @@ pub struct KilivepaperBridgeRust {
     last_error: QString,
     last_message: QString,
     busy: bool,
+    pending_catalog: Option<CatalogRequest>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CatalogRequest {
+    query: String,
+    provider: String,
+    quality: String,
+    page: i32,
+    limit: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -132,34 +142,18 @@ impl ffi::KilivepaperBridge {
         page: i32,
         limit: i32,
     ) {
+        let request = CatalogRequest {
+            query: query.to_string(),
+            provider: normalized_provider(&provider.to_string()),
+            quality: normalized_browse_quality(&quality.to_string()),
+            page: page.max(1),
+            limit: limit.clamp(1, 50),
+        };
         if *self.busy() {
+            self.as_mut().rust_mut().pending_catalog = Some(request);
             return;
         }
-        self.as_mut().set_busy(true);
-        self.as_mut().set_last_error(QString::default());
-        let query = query.to_string();
-        let provider = normalized_provider(&provider.to_string());
-        let quality = normalized_browse_quality(&quality.to_string());
-        let page = page.max(1);
-        let limit = limit.clamp(1, 50);
-        let qt_thread = self.qt_thread();
-
-        std::thread::spawn(move || {
-            let result = request_catalog(&query, &provider, &quality, page, limit)
-                .and_then(|value| serde_json::to_string(&value).map_err(|error| error.to_string()));
-            qt_thread
-                .queue(move |mut bridge| {
-                    match result {
-                        Ok(json) => {
-                            bridge.as_mut().set_catalog_json(QString::from(&json));
-                            bridge.as_mut().set_last_error(QString::default());
-                        }
-                        Err(error) => bridge.as_mut().set_last_error(QString::from(&error)),
-                    }
-                    bridge.as_mut().set_busy(false);
-                })
-                .ok();
-        });
+        start_catalog_request(self, request);
     }
 
     fn refresh_library(mut self: core::pin::Pin<&mut Self>) {
@@ -495,6 +489,42 @@ impl ffi::KilivepaperBridge {
                 .ok();
         });
     }
+}
+
+fn start_catalog_request(
+    mut bridge: core::pin::Pin<&mut ffi::KilivepaperBridge>,
+    request: CatalogRequest,
+) {
+    bridge.as_mut().set_busy(true);
+    bridge.as_mut().set_last_error(QString::default());
+    let qt_thread = bridge.qt_thread();
+
+    std::thread::spawn(move || {
+        let result = request_catalog(
+            &request.query,
+            &request.provider,
+            &request.quality,
+            request.page,
+            request.limit,
+        )
+        .and_then(|value| serde_json::to_string(&value).map_err(|error| error.to_string()));
+        qt_thread
+            .queue(move |mut bridge| {
+                match result {
+                    Ok(json) => {
+                        bridge.as_mut().set_catalog_json(QString::from(&json));
+                        bridge.as_mut().set_last_error(QString::default());
+                    }
+                    Err(error) => bridge.as_mut().set_last_error(QString::from(&error)),
+                }
+                bridge.as_mut().set_busy(false);
+                let pending = bridge.as_mut().rust_mut().pending_catalog.take();
+                if let Some(pending) = pending {
+                    start_catalog_request(bridge, pending);
+                }
+            })
+            .ok();
+    });
 }
 
 fn request_catalog(

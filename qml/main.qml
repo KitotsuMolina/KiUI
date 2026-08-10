@@ -24,6 +24,7 @@ ApplicationWindow {
     property string favoriteCount: "N/D"
     property string selectedOutput: ""
     property string applyMessage: ""
+    property bool applyMessageIsError: false
     property string selectedPack: ""
     property string selectedColor: ""
     property bool dashboardHasActiveJobs: false
@@ -50,6 +51,7 @@ ApplicationWindow {
     property bool showDetails: width >= 1180
     readonly property bool hasKitowall: runtimeBridge.hasKitowall
     readonly property bool hasKilivepaper: runtimeBridge.hasKilivepaper
+    readonly property bool hasKisddm: runtimeBridge.hasKisddm
     readonly property var appearanceState: hasKitowall
         ? parseJson(kitowallBridge.appearanceJson, {}) : ({})
     readonly property var appearancePalette: appearanceState.palette || ({})
@@ -679,12 +681,14 @@ ApplicationWindow {
                     || lastMessage.indexOf("Wallpaper eliminado de favoritos") === 0) {
                 kitowallBridge.refreshDashboard(root.selectedPack, true)
                 root.applyMessage = lastMessage
+                root.applyMessageIsError = false
                 applyToast.restart()
             }
         }
         onLastErrorChanged: {
             if (lastError.length > 0) {
                 root.applyMessage = lastError
+                root.applyMessageIsError = true
                 applyToast.restart()
             }
         }
@@ -697,12 +701,14 @@ ApplicationWindow {
         onLastMessageChanged: {
             if (lastMessage.length > 0) {
                 root.applyMessage = lastMessage
+                root.applyMessageIsError = false
                 applyToast.restart()
             }
         }
         onLastErrorChanged: {
             if (lastError.length > 0) {
                 root.applyMessage = lastError
+                root.applyMessageIsError = true
                 applyToast.restart()
             }
         }
@@ -1038,6 +1044,43 @@ ApplicationWindow {
                     root.resolutionFiltersExpanded = false
                 }
             }
+
+            Item {
+                visible: root.hasKisddm
+                width: 1
+                height: visible ? 12 : 0
+            }
+
+            Text {
+                visible: root.hasKisddm && !root.compactSidebar
+                height: visible ? implicitHeight : 0
+                text: "PANTALLA DE INICIO"
+                color: "#63697e"
+                font.family: root.uiFont
+                font.pixelSize: 10
+                font.letterSpacing: 1.1
+                leftPadding: 9
+            }
+
+            NavItem {
+                visible: root.hasKisddm
+                height: visible ? implicitHeight : 0
+                width: parent.width
+                displayLabel: "KiSDDM"
+                displayIcon: "desktop_windows"
+                compact: root.compactSidebar
+                accent: root.accent
+                accentBright: root.accentBright
+                selected: root.activeView === "kisddm"
+                onActivated: {
+                    if (!root.hasKisddm)
+                        return
+                    root.activeView = "kisddm"
+                    root.colorFiltersExpanded = false
+                    root.resolutionFiltersExpanded = false
+                }
+            }
+
         }
 
         Grid {
@@ -2025,6 +2068,30 @@ ApplicationWindow {
     }
 
     Loader {
+        id: kisddmLoader
+        visible: root.hasKisddm && root.activeView === "kisddm"
+        enabled: visible
+        active: visible
+        source: "KiSddmPage.qml"
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: 26
+        anchors.rightMargin: 28
+        anchors.topMargin: 24
+        anchors.bottomMargin: 24
+        onLoaded: {
+            item.accent = Qt.binding(function() { return root.accent })
+            item.accentBright = Qt.binding(function() { return root.accentBright })
+            item.accentDark = Qt.binding(function() { return root.accentDark })
+            item.textPrimary = Qt.binding(function() { return root.textPrimary })
+            item.textSecondary = Qt.binding(function() { return root.textSecondary })
+            item.uiFont = root.uiFont
+        }
+    }
+
+    Loader {
         id: settingsLoader
 
         anchors.left: parent.left
@@ -2062,21 +2129,28 @@ ApplicationWindow {
 
     Rectangle {
         id: toast
-        width: 240
-        height: 42
+        width: Math.min(560, Math.max(260, root.width - 48))
+        height: toastText.implicitHeight + 24
         radius: 12
         anchors.horizontalCenter: parent.horizontalCenter
         y: applyToast.running ? 24 : -60
         color: "#dd171926"
-        border.color: kitowallBridge.lastError.length > 0 ? "#8f3d4b" : "#63407d"
+        border.color: root.applyMessageIsError ? "#8f3d4b" : "#63407d"
         z: 20
 
         Text {
-            anchors.centerIn: parent
+            id: toastText
+            anchors.fill: parent
+            anchors.margins: 12
             text: root.applyMessage
-            color: kitowallBridge.lastError.length > 0 ? "#f3b2ba" : "#e8e3ed"
+            color: root.applyMessageIsError ? "#f3b2ba" : "#e8e3ed"
             font.family: root.uiFont
             font.pixelSize: 11
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: Text.Wrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
         }
 
         Behavior on y {
